@@ -110,7 +110,7 @@ run_one() {
     pushd "$d" >/dev/null || { echo "Failed to cd: $d"; return 2; }
 
     # Apply environment settings
-    source "$CuPBoP_PATH/CuPBoP_env_setup_wo_Pocl.sh"
+    source "$CuPBoP_PATH/CuPBoP_env_setup_wo_PoCL.sh"
     export VORTEX_SCHEDULE_FLAG=2
 
     # Run benchmark script
