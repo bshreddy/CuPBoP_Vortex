@@ -6,27 +6,27 @@ export VORTEX_LOCALMEM_FLAG=1     # Switch for Vortex Localmem HW (only works fo
 
 if [ -z "${TOOLDIR}" ]; then
   echo "Error: TOOLDIR(Vortex Toolchain) is not defined. Please check your Vortex environment."
-  exit 1
+  #exit 1
 fi
 
 if [ -z "${VORTEX_HOME}" ]; then
   echo "Error: VORTEX_HOME is not defined. Please check whether Vortex is built and installed."
-  exit 1
+  #exit 1
 fi
 
 if [ -z "${LLVM_VORTEX}" ]; then
   echo "Error: LLVM_VORTEX is not defined. Please check whether Vortex LLVM is built and installed."
-  exit 1
+  #exit 1
 fi
 
 if [ -z "${CuPBoP_PATH}" ]; then
   echo "Error: CuPBoP_PATH is not defined. Please check whether CuPBoP is built and installed."
-  exit 1
+  #exit 1
 fi
 
 if [ -z "${VORTEX_PATH}" ]; then
   echo "Error: VORTEX_PATH is not defined. Please check where vortex build are located"
-  exit 1
+  #exit 1
 fi
 
 

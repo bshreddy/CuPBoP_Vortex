@@ -3,6 +3,7 @@ import re
 import csv
 from pathlib import Path
 from typing import Optional, Dict, Tuple
+import argparse
 
 # Benchmarks to be checked
 benchmarks = [
@@ -27,6 +28,17 @@ LINE_RE = re.compile(
     re.IGNORECASE
 )
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Example argparse script"
+    )
+
+    # suffix
+    parser.add_argument("-s", "--suffix", default="test_tmp",
+                        help="suffix string to lookup files")
+
+    return parser.parse_args()
+
 def sum_global_perf(fp: Path) -> Tuple[int, int]:
     instrs_sum = 0
     cycles_sum = 0
@@ -41,7 +53,7 @@ def sum_global_perf(fp: Path) -> Tuple[int, int]:
                 cycles_sum += int(m.group("cycles"))
     return instrs_sum, cycles_sum
 
-def classify_candidate_files(folder: Path) -> Dict[str, Optional[Path]]:
+def classify_candidate_files(folder: Path, suffix: str) -> Dict[str, Optional[Path]]:
     """
     Classify candidate files into 4 categories:
       - off_off:  LOCAL_MEM_0 & no 'L2'
@@ -57,24 +69,27 @@ def classify_candidate_files(folder: Path) -> Dict[str, Optional[Path]]:
     }
 
     patterns = [
-        "CGO_perf_counter_4C_16W_32T_SCHE_2_LOCAL_MEM_*",
-        "CGO_perf_counter_4C_16W_32T_SCHE_2*LOCAL_MEM_*",
+        "Perf_counter_4C_16W_32T_SCHE_2_*",
     ]
+
+
+
     seen = []
     for pat in patterns:
         for p in folder.glob(pat):
+            
+            #print(p.name.lower())
             # accept *.txt and also variants like *.L2txt
-            if p.suffix.lower() != ".txt" and not p.name.lower().endswith("l2txt"):
+            if p.suffix.lower() != ".txt" and not p.name.lower().endswith(suffix + ".txt"):
                 continue
             if p in seen or not p.is_file():
                 continue
             seen.append(p)
-
             name_lower = p.name.lower()
-            l2_on = ("l2" in name_lower)
-            if "local_mem_0" in name_lower:
+            l2_on = ("l2on" in name_lower)
+            if "lmoff" in name_lower:
                 key = "off_on" if l2_on else "off_off"
-            elif "local_mem_1" in name_lower:
+            elif "lmon" in name_lower:
                 key = "on_on" if l2_on else "on_off"
             else:
                 continue
@@ -82,6 +97,7 @@ def classify_candidate_files(folder: Path) -> Dict[str, Optional[Path]]:
             if results[key] is None:
                 results[key] = p
 
+    print(results)
     return results
 
 def sums_from_file(p: Optional[Path]) -> Optional[Tuple[int, int]]:
@@ -93,6 +109,8 @@ def sums_from_file(p: Optional[Path]) -> Optional[Tuple[int, int]]:
 def main():
     root = Path.cwd()
     out_csv = root / "perf_summary_localmem_l2_sums.csv"
+
+    args = parse_args()
 
     # Columns: benchmark + (instrs, cycles) x 4 conditions
     headers = [
@@ -110,7 +128,7 @@ def main():
             print(f"[WARN] {bench} folder does not exist, skipping")
             continue
 
-        files = classify_candidate_files(folder)
+        files = classify_candidate_files(folder, args.suffix)
 
         off_off = sums_from_file(files["off_off"])
         off_on  = sums_from_file(files["off_on"])

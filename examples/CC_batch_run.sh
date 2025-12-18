@@ -15,7 +15,7 @@ if [ -z "${VORTEX_HOME}" ]; then
   exit 1
 fi
 
-if [ -z "${LLVM_VORTEX}" ]; then
+if [ -z "${LLVM_VORTEX}" ]; then 
   echo "Error: LLVM_VORTEX is not defined. Please check whether Vortex LLVM is built and installed."
   exit 1
 fi
@@ -40,7 +40,7 @@ set -uo pipefail
 # Usage
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'USAGE'
-Usage: ./CGO_batch_run.sh [SUFFIX] [LOCALMEM_MODE]
+Usage: ./CC_batch_run.sh [SUFFIX] [LOCALMEM_MODE]
 
   SUFFIX          : suffix to append to result filenames (e.g., test1 → *_test1.txt)
                     (default: _test_tmp)
@@ -61,7 +61,7 @@ else
 fi
 
 # Input 2: localmem mode
-localmem_mode="${2:-off}"   # default = off
+localmem_mode="${2:-onoff}"   # default = off
 
 # Benchmarks to run
 benchmarks=(
@@ -88,6 +88,13 @@ runner="./kjrun_llvm18.sh"
 logdir="logs"
 mkdir -p "$logdir"
 
+# Read L2 flag once from environment (no sweep)
+L2_FLAG="${VORTEX_L2_FLAG:-0}"
+if [[ "$L2_FLAG" != "0" && "$L2_FLAG" != "1" ]]; then
+  echo "Warning: VORTEX_L2_FLAG must be 0 or 1. Got '$L2_FLAG'. Forcing 0."
+  L2_FLAG=0
+fi
+
 ############################
 # Utility functions
 ############################
@@ -103,20 +110,31 @@ sanitize() {
 # Set env_cmds, out_name, and mode_tag depending on localmem flag
 set_localmem() {
   local flag="$1"
+
+  # LOCALMEM tag
   if [[ "$flag" == "1" ]]; then
     mode_tag="_lmON"
   else
     mode_tag="_lmOFF"
   fi
 
+  # L2 tag (from environment)
+  if [[ "$L2_FLAG" == "1" ]]; then
+    mode_tag="${mode_tag}_L2ON"
+  else
+    mode_tag="${mode_tag}_L2OFF"
+  fi
+
   # Result filename depends on LOCAL_MEM flag
-  out_name="CGO_perf_counter_4C_16W_32T_SCHE_2_LOCAL_MEM_${flag}.txt"
+  out_name="Perf_counter_4C_16W_32T_SCHE_2_LOCAL_MEM_${flag}.txt"
+  rename_name="Perf_counter_4C_16W_32T_SCHE_2${mode_tag}${base_suffix}.txt"
 
   env_cmds=(
     "source $CuPBoP_PATH/CuPBoP_env_setup_wo_Pocl.sh"
     "source $CuPBoP_PATH/CuPBoP_env_setup_wo_Pocl.sh"
     "export VORTEX_SCHEDULE_FLAG=2"
     "export VORTEX_LOCALMEM_FLAG=$flag"
+    "export VORTEX_L2_FLAG=$L2_FLAG"
   )
 }
 
@@ -131,7 +149,7 @@ run_one() {
 
   # Final result filename = LOCAL_MEM_x + suffix
   local base_noext="${out_name%.txt}"
-  local renamed_name="${base_noext}${base_suffix}.txt"
+  local renamed_name="${rename_name}"
 
   {
     echo "[$(date +'%F %T')] >>> start $d (mode=${mode_suffix}, out=$renamed_name)"

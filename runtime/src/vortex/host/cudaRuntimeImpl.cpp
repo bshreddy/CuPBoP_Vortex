@@ -613,6 +613,11 @@ cudaError_t cudaGetDeviceProperties(cudaDeviceProp *deviceProp, int device) {
   return cudaSuccess;
 }
 
+cudaError_t cudaGetDeviceProperties_v2(cudaDeviceProp *deviceProp, int device) {
+  return cudaGetDeviceProperties(deviceProp, device);
+}
+
+
 static cudaError_t lastError = cudaSuccess;
 const char *cudaGetErrorString(cudaError_t error) {
   if (error == cudaSuccess) {
@@ -841,11 +846,11 @@ cudaError_t cudaLaunchKernel_vortex(
   std::string filename;
   if(schedule == 2)
   {
-    filename = "CGO_perf_counter_" + std::to_string(NUM_CORES_VX) + "C_" + std::to_string(NUM_WARPS_VX) + "W_" + std::to_string(NUM_THREADS_VX) + "T_SCHE_"+ std::to_string(schedule) +"_LOCAL_MEM_"+ std::to_string(local_mem_use) + ".txt";
+    filename = "Perf_counter_" + std::to_string(NUM_CORES_VX) + "C_" + std::to_string(NUM_WARPS_VX) + "W_" + std::to_string(NUM_THREADS_VX) + "T_SCHE_"+ std::to_string(schedule) +"_LOCAL_MEM_"+ std::to_string(local_mem_use) + ".txt";
   }
   else
   {
-    filename = "CGO_perf_counter_" + std::to_string(NUM_CORES_VX) + "C_" + std::to_string(NUM_WARPS_VX) + "W_" + std::to_string(NUM_THREADS_VX) + "T_SCHE_"+ std::to_string(schedule) + ".txt";
+    filename = "Perf_counter_" + std::to_string(NUM_CORES_VX) + "C_" + std::to_string(NUM_WARPS_VX) + "W_" + std::to_string(NUM_THREADS_VX) + "T_SCHE_"+ std::to_string(schedule) + ".txt";
   }
 
   std::cout << "output file: " << filename << std::endl;

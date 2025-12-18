@@ -40,7 +40,7 @@ set -uo pipefail
 # Usage
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'USAGE'
-Usage: ./CGO_batch_warp_feature_run.sh [SUFFIX]
+Usage: ./CC_batch_warp_feature_run.sh [SUFFIX]
 
   SUFFIX          : suffix to append to result filenames (e.g., test1 → *_test1.txt)
                     (default: _test_tmp)
@@ -94,7 +94,7 @@ run_one() {
   local log="$logdir/${tag}.log"
 
   # Result filename
-  local out_name="CGO_perf_counter_1C_32W_32T_SCHE_2_LOCAL_MEM_1.txt"
+  local out_name="Batch_perf_counter_1C_32W_32T_SCHE_2_LOCAL_MEM_1.txt"
   local base_noext="${out_name%.txt}"
   local renamed_name="${base_noext}${base_suffix}.txt"
 
