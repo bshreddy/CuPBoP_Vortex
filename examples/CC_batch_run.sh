@@ -78,7 +78,7 @@ benchmarks=(
   sgemm
   saxpy
   vecadd
-  psum
+  # psum
 )
 
 # Script to run inside each benchmark folder
@@ -130,8 +130,8 @@ set_localmem() {
   rename_name="Perf_counter_4C_16W_32T_SCHE_2${mode_tag}${base_suffix}.txt"
 
   env_cmds=(
-    "source $CuPBoP_PATH/CuPBoP_env_setup_wo_Pocl.sh"
-    "source $CuPBoP_PATH/CuPBoP_env_setup_wo_Pocl.sh"
+    "source $CuPBoP_PATH/CuPBoP_env_setup_wo_PoCL.sh"
+    "source $CuPBoP_PATH/CuPBoP_env_setup_wo_PoCL.sh"
     "export VORTEX_SCHEDULE_FLAG=2"
     "export VORTEX_LOCALMEM_FLAG=$flag"
     "export VORTEX_L2_FLAG=$L2_FLAG"
