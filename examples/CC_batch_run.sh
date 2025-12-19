@@ -78,7 +78,7 @@ benchmarks=(
   sgemm
   saxpy
   vecadd
-  # psum
+  psum
 )
 
 # Script to run inside each benchmark folder
