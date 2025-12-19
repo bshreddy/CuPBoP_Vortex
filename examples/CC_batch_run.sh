@@ -181,6 +181,8 @@ run_one() {
     rc=$?
     echo "RUN RC=$rc"
 
+    rm -r ./trace
+
     local produced=0
     if [[ -f "$out_name" ]]; then
       mv -f "$out_name" "$renamed_name"
