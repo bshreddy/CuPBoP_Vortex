@@ -42,12 +42,6 @@ def build_expected_df() -> pd.DataFrame:
          "L1_instrs": 23051062, "L1_cycles": 40741404,
          "L1+L2_instrs": 23051062, "L1+L2_cycles": 17301387},
 
-        {"benchmark": "gauss",
-         "L1+Localmem_instrs": 582211989, "L1+Localmem_cycles": 2007503045,
-         "L1+L2+Localmem_instrs": 484713432, "L1+L2+Localmem_cycles": 1352092734,
-         "L1_instrs": None, "L1_cycles": None,  # empty in your table
-         "L1+L2_instrs": 582208922, "L1+L2_cycles": 1584930492},
-
         {"benchmark": "nn",
          "L1+Localmem_instrs": 2881194, "L1+Localmem_cycles": 10434009,
          "L1+L2+Localmem_instrs": 2881194, "L1+L2+Localmem_cycles": 8350216,
