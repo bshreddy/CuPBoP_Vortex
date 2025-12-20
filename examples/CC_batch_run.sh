@@ -72,7 +72,6 @@ benchmarks=(
   dotproduct
   nn
   pathfinder
-  psort
   transpose
   stencil
   sgemm

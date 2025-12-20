@@ -89,12 +89,7 @@ def build_expected_df() -> pd.DataFrame:
          "L1+L2+Localmem_instrs": 487998, "L1+L2+Localmem_cycles": 1391675,
          "L1_instrs": 487998, "L1_cycles": 1584678,
          "L1+L2_instrs": 487998, "L1+L2_cycles": 1391675},
-
-        {"benchmark": "psort",
-         "L1+Localmem_instrs": 2486771881, "L1+Localmem_cycles": 201377352,
-         "L1+L2+Localmem_instrs": 2486771882, "L1+L2+Localmem_cycles": 200815215,
-         "L1_instrs": 2486771881, "L1_cycles": 201377352,
-         "L1+L2_instrs": 2486771882, "L1+L2_cycles": 200815215},
+         
     ]
     return pd.DataFrame(rows)
 

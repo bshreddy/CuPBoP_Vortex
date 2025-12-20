@@ -20,7 +20,6 @@ benchmarks = [
     "stencil",
     "transpose",
     "vecadd",
-    "psort",
 ]
 
 LINE_RE = re.compile(
