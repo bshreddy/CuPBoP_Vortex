@@ -46,14 +46,14 @@ __device__ __inline__ int block_binary_prefix_sums(int x,
   const int rank       = __popc(m & lanemask_lt());
   const int warpCount  = __popc(m);
 
-  // One atomicAdd per warp, executed in warpIdx order.
+//   // One atomicAdd per warp, executed in warpIdx order.
   int base = 0;
-  if (lane == 0) {
-    // spin until it's this warp's turn
-    while (atomicAdd(turnCtr, 0) != warpIdx) { }
-    base = atomicAdd(blockCtr, warpCount);   // reserve a contiguous block
-    atomicAdd(turnCtr, 1);                   // allow next warp
-  }
+//   if (lane == 0) {
+//     // spin until it's this warp's turn
+//     while (atomicAdd(turnCtr, 0) != warpIdx) { }
+//     base = atomicAdd(blockCtr, warpCount);   // reserve a contiguous block
+//     atomicAdd(turnCtr, 1);                   // allow next warp
+//   }
 #if (CUDART_VERSION < 9000)
   base = __shfl(base, 0);
 #else
@@ -159,10 +159,10 @@ int main(int argc, char* argv[])
 
   // scan over N elements (N = [32, 1024])
   bscan<32>(repeat);
-  bscan<64>(repeat);
-  bscan<128>(repeat);
-  bscan<256>(repeat);
-  bscan<512>(repeat);
+  // bscan<64>(repeat);
+  // bscan<128>(repeat);
+  // bscan<256>(repeat);
+  // bscan<512>(repeat);
 
   return 0;
 }
