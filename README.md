@@ -38,6 +38,8 @@ Please look at the following files to understand the basics of CuPBoP:
 
 - Vortex 2.0 ([Verified with commit on Aug 2, 2025](https://github.com/vortexgpgpu/vortex/tree/9cd0e1bb5f63bd93f04bd940a866d717dd22cf30))
 
+- libtinfo-dev
+
 ### Installation Procedure
 
  If you have access to the Kia or Volvo (server that needs GT credentials to access), follow the shared Notion setup guide.
