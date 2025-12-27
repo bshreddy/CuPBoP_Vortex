@@ -22,23 +22,16 @@ Please look at the following files to understand the basics of CuPBoP:
 
 ### Prerequisites
 
-  
-
-- Linux: Verified on Ubuntu 18.04 / 20.04
-
-- LLVM 18.1.7 (Vortex extended LLVM)
-
-- NVIDIA CUDA-toolkit (Verified on Cuda 12.1.1)
-
-- x86 CPU
-
-- pthread
-
-- GCC (Verified with 7.5.0, 10.5.0)
-
-- Vortex 2.0 ([Verified with commit on Aug 2, 2025](https://github.com/vortexgpgpu/vortex/tree/9cd0e1bb5f63bd93f04bd940a866d717dd22cf30))
-
-- libtinfo-dev
+- **Linux:** Verified on Ubuntu 18.04 / 20.04
+- **LLVM 18.1.7** (Vortex extended LLVM)
+- **NVIDIA CUDA Toolkit:** Verified on CUDA 12.1.1
+- **x86 CPU**
+- **GCC:** Verified with 7.5.0, 10.5.0
+- **CMake** (>= 3.10)
+- **System libraries (Ubuntu/Debian):**
+  - `libtinfo-dev`
+  - `zlib1g-dev`
+- **Vortex 2.0:** Verified with commit on Aug 2, 2025
 
 ### Installation Procedure
 
