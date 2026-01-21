@@ -17,7 +17,7 @@ hostname
 # Installing prebuilt Vortex package
 # rm -rf vortex
 rm -rf build
-source "./ci/rg-ci-env-setup.sh"
+source "./ci/rg-ci-setup.sh"
 #export CuPBoP_PATH=$PWD
 #bash $CuPBoP_PATH/ci/toolchain_install.sh --vortex
 
