@@ -1,0 +1,71 @@
+# Copyright © 2019-2025
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Modified from Vortex CI by Aaron Kantsevoy (akantsevoy3@gatech.edu)
+
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Repositoty
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Run Sbatch file
+        run: chmod +x ./ci/run-crnch-cuda.sh && sbatch ./ci/run-crnch-cuda.sh
+
+  tests:
+    runs-on: self-hosted
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [microbench, gauss, bfs, nn, nw, srad_v2, hotspot, streamcluster, myocyte, pathfinder, lud, cfd, btree, backprop, heartwall, huffman, hotspot3D]
+        # xlen: [32, 64]
+
+    steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+
+
+  #     - name: Download Build Artifact
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: build-${{ matrix.xlen }}
+  #         path: build${{ matrix.xlen }}
+
+      - name: Run tests (SBATCH)
+        run: |
+          export TEST_NAME="${{ matrix.name }}"
+          chmod +x ./ci/run-crnch-cuda-test.sh
+          JOB_SUBMISSION=$(sbatch --parsable ./ci/run-crnch-cuda-test.sh)
+          #SLURM_JOB_ID=${JOB_SUBMISSION##* }
+          #REMOTE_OUTPUT_FILE="/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out"
+
+          echo $FINAL_OUTPUT_PATH
+          cat "$FINAL_OUTPUT_PATH"
+
+  complete:
+    runs-on: self-hosted
+    needs: tests
+
+    steps:
+      - name: Check Completion
+        run: echo "All matrix jobs passed"
+
