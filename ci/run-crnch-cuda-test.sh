@@ -1,9 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name="CuPBoP-Vortex-ci-cuda"
 #SBATCH -t 00:30:00                              # Duration of the job
+#SBATCH -p rg-nextgen-hpc
 #SBATCH -w dash[1-4]
 #SBATCH -N 1
-#SBATCH -G 1
+#SBATCH --gres=gpu:1
 #SBATCH -o /tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-%j.out   # Combined output and error messages file
 #SBATCH -W                                       # Do not exit until the submitted job terminates.
 
@@ -15,7 +16,7 @@ hostname
 #module load nvhpc/24.9
 
 export FINAL_OUTPUT_PATH="/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out"
-source "./ci/rg-ci-env-setup.sh"
+source "./ci/rg-ci-setup.sh"
 
 cd ./examples/${TEST_NAME}
 bash kjrun_llvm18.sh
