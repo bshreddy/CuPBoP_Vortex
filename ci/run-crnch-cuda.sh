@@ -2,6 +2,7 @@
 #SBATCH --job-name="CuPBoP-Vortex-ci-cuda"
 #SBATCH -t 00:10:00                              # Duration of the job
 #SBATCH -w dash[1-4]
+#SBATCH -N 1
 #SBATCH -G 1
 #SBATCH -o /tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-%j.out   # Combined output and error messages file
 #SBATCH -W                                       # Do not exit until the submitted job terminates.
