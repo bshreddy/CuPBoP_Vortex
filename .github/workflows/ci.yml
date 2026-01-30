@@ -52,7 +52,7 @@ jobs:
   #         path: build${{ matrix.xlen }}
 
       - name: Run tests (SBATCH)
-        continue-on-error: true
+        # continue-on-error: true
         run: |
           export TEST_NAME="${{ matrix.name }}"
           echo $TEST_NAME
