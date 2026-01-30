@@ -53,10 +53,11 @@ jobs:
       - name: Run tests (SBATCH)
         run: |
           export TEST_NAME="${{ matrix.name }}"
-          chmod +x ./ci/run-crnch-cuda-test.sh && sbatch ./ci/run-crnch-cuda-test.sh
-          #JOB_SUBMISSION=$(sbatch --parsable ./ci/run-crnch-cuda-test.sh)
-          #SLURM_JOB_ID=${JOB_SUBMISSION##* }
-          #REMOTE_OUTPUT_FILE="/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out"
+          chmod +x ./ci/run-crnch-cuda-test.sh
+          SLURM_JOB_ID=$(sbatch --parsable ./ci/run-crnch-cuda-test.sh)
+          REMOTE_OUTPUT_FILE=/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out
+
+          cat $REMOTE_OUTPUT_FILE
 
   complete:
     runs-on: self-hosted
