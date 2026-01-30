@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [bfs] #[microbench, gauss, bfs, nn, nw, srad_v2, hotspot, streamcluster, myocyte, pathfinder, lud, cfd, btree, backprop, heartwall, huffman, hotspot3D]
+        name: [bfs, nn] #[microbench, gauss, nw, srad_v2, hotspot, streamcluster, myocyte, pathfinder, lud, cfd, btree, backprop, heartwall, huffman, hotspot3D]
         # xlen: [32, 64]
 
     steps:
@@ -57,9 +57,6 @@ jobs:
           #JOB_SUBMISSION=$(sbatch --parsable ./ci/run-crnch-cuda-test.sh)
           #SLURM_JOB_ID=${JOB_SUBMISSION##* }
           #REMOTE_OUTPUT_FILE="/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out"
-
-          # echo $FINAL_OUTPUT_PATH
-          # cat "$FINAL_OUTPUT_PATH"
 
   complete:
     runs-on: self-hosted
