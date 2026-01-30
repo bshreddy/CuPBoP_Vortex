@@ -55,17 +55,21 @@ jobs:
         continue-on-error: true
         run: |
           export TEST_NAME="${{ matrix.name }}"
-          # export GITHUB_WORKSPACE=/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex
           echo $TEST_NAME
           chmod +x ./ci/run-crnch-cuda-test.sh && sbatch --wait --export=ALL ./ci/run-crnch-cuda-test.sh
-          # SLURM_JOB_ID=$(sbatch --parsable --export=ALL ./ci/run-crnch-cuda-test.sh)
-          # sbatch --wait $SLURM_JOB_ID
-          # REMOTE_OUTPUT_FILE=/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out
+          echo "Showing last 100 lines of log:"
+          LOG_FILE=/tools/ci-reports/CuPBoP_logs/${TEST_NAME}.out
+          tail -n 100 $LOG_FILE
 
-          # echo $SLURM_JOB_ID
-          #echo $REMOTE_OUTPUT_FILE
-          echo "Showing last 10 lines of log:"
-          tail -n 100 /tools/ci-reports/CuPBoP_logs/${TEST_NAME}.out
+          if tail -n 3 "$LOG_FILE" | grep -q "Kernel compilation completed!" && \
+             tail -n 3 "$LOG_FILE" | grep -q "Host compilation completed!" && \
+             tail -n 3 "$LOG_FILE" | grep -q "Execution completed!"; then
+            echo "Execution successful!"
+            exit 0
+          else
+            echo "Execution failure."
+            exit 1
+          fi
 
   complete:
     runs-on: self-hosted
