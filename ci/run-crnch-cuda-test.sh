@@ -2,7 +2,7 @@
 #SBATCH --job-name="CuPBoP-Vortex-ci-cuda"
 #SBATCH -t 00:30:00                              # Duration of the job
 #SBATCH -p rg-nextgen-hpc
-#SBATCH -w dash[1-4]
+#SBATCH -w dash3
 #SBATCH -N 1
 #SBATCH --gres=gpu:1
 #SBATCH -o /tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-%j.out   # Combined output and error messages file
