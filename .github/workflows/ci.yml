@@ -57,7 +57,7 @@ jobs:
           export TEST_NAME="${{ matrix.name }}"
           # export GITHUB_WORKSPACE=/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex
           echo $TEST_NAME
-          chmod +x ./ci/run-crnch-cuda-test.sh $$ sbatch --wait --export=ALL ./ci/run-crnch-cuda-test.sh
+          chmod +x ./ci/run-crnch-cuda-test.sh && sbatch --wait --export=ALL ./ci/run-crnch-cuda-test.sh
           # SLURM_JOB_ID=$(sbatch --parsable --export=ALL ./ci/run-crnch-cuda-test.sh)
           # sbatch --wait $SLURM_JOB_ID
           # REMOTE_OUTPUT_FILE=/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out
