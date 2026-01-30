@@ -55,11 +55,10 @@ return p;
 
 
  extern "C" {
-    extern void KernelP4NodePiPbS2_S2_S1_i_wrapper(void *args);
-    extern void Kernel2PbS_S_S_i_wrapper(void *args);
+    extern void euclidP7latLongPfiff_wrapper(void *args);
 }
 
-void cuda_KernelP4NodePiPbS2_S2_S1_i_wrapper(void* args) {
+void cuda_euclidP7latLongPfiff_wrapper(void* args) {
     block_index_x = blockIdx.x;
     block_index_y = blockIdx.y;
     block_index_z = blockIdx.z;
@@ -70,26 +69,11 @@ void cuda_KernelP4NodePiPbS2_S2_S1_i_wrapper(void* args) {
 
 //    vx_printf("kernel_warpper: group=(%d, %d) thread=(%d, %d)\n", blockIdx.x, blockIdx.y, thread_id_x, thread_id_y);
 
-    KernelP4NodePiPbS2_S2_S1_i_wrapper((void **)args);
-}
-
-void cuda_Kernel2PbS_S_S_i_wrapper(void* args) {
-    block_index_x = blockIdx.x;
-    block_index_y = blockIdx.y;
-    block_index_z = blockIdx.z;
-
-    thread_id_x = threadIdx.x;
-    thread_id_y = threadIdx.y;
-    thread_id_z = threadIdx.z;
-
-//    vx_printf("kernel_warpper: group=(%d, %d) thread=(%d, %d)\n", blockIdx.x, blockIdx.y, thread_id_x, thread_id_y);
-
-    Kernel2PbS_S_S_i_wrapper((void **)args);
+    euclidP7latLongPfiff_wrapper((void **)args);
 }
 
 vx_kernel_func_cb callbacks[] = {
-    cuda_KernelP4NodePiPbS2_S2_S1_i_wrapper, 
-    cuda_Kernel2PbS_S_S_i_wrapper, 
+    cuda_euclidP7latLongPfiff_wrapper, 
 };
 
 int main() {

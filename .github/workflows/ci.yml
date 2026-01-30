@@ -26,9 +26,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          clean: false
 
       - name: Run Sbatch file
-        run: chmod +x ./ci/run-crnch-cuda.sh && sbatch --export=ALL ./ci/run-crnch-cuda.sh
+        run: chmod +x ./ci/run-crnch-cuda.sh && sbatch --wait --export=ALL ./ci/run-crnch-cuda.sh
 
   tests:
     runs-on: self-hosted
@@ -53,6 +54,8 @@ jobs:
       - name: Run tests (SBATCH)
         run: |
           export TEST_NAME="${{ matrix.name }}"
+          # export GITHUB_WORKSPACE=/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex
+          echo $TEST_NAME
           chmod +x ./ci/run-crnch-cuda-test.sh
           SLURM_JOB_ID=$(sbatch --parsable --wait --export=ALL ./ci/run-crnch-cuda-test.sh)
           REMOTE_OUTPUT_FILE=/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out
