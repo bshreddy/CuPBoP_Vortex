@@ -13,8 +13,10 @@ hostname
 
 export FINAL_OUTPUT_PATH="/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out"
 apptainer exec --nv -B /projects/ci-runners/CuPBoP-Vortex/:/projects/ci-runners/CuPBoP-Vortex/ /projects/ci-runners/CuPBoP-Vortex/tools/cupbop_env.sif /bin/bash << 'EOF'
+    set -e
     source "./ci/rg-ci-setup.sh"
 
     cd ./examples/${TEST_NAME}
     bash kjrun_llvm18.sh
+    exit 0
 EOF
