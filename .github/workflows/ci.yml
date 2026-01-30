@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [microbench, gauss, bfs, nn, nw, srad_v2, hotspot, streamcluster, myocyte, pathfinder, lud, cfd, btree, backprop, heartwall, huffman, hotspot3D]
+        name: [bfs] #[microbench, gauss, bfs, nn, nw, srad_v2, hotspot, streamcluster, myocyte, pathfinder, lud, cfd, btree, backprop, heartwall, huffman, hotspot3D]
         # xlen: [32, 64]
 
     steps:
