@@ -55,10 +55,11 @@ return p;
 
 
  extern "C" {
-    extern void dynproc_kerneliPiS_S_iiii_wrapper(void *args);
+    extern void KernelP4NodePiPbS2_S2_S1_i_wrapper(void *args);
+    extern void Kernel2PbS_S_S_i_wrapper(void *args);
 }
 
-void cuda_dynproc_kerneliPiS_S_iiii_wrapper(void* args) {
+void cuda_KernelP4NodePiPbS2_S2_S1_i_wrapper(void* args) {
     block_index_x = blockIdx.x;
     block_index_y = blockIdx.y;
     block_index_z = blockIdx.z;
@@ -69,11 +70,26 @@ void cuda_dynproc_kerneliPiS_S_iiii_wrapper(void* args) {
 
 //    vx_printf("kernel_warpper: group=(%d, %d) thread=(%d, %d)\n", blockIdx.x, blockIdx.y, thread_id_x, thread_id_y);
 
-    dynproc_kerneliPiS_S_iiii_wrapper((void **)args);
+    KernelP4NodePiPbS2_S2_S1_i_wrapper((void **)args);
+}
+
+void cuda_Kernel2PbS_S_S_i_wrapper(void* args) {
+    block_index_x = blockIdx.x;
+    block_index_y = blockIdx.y;
+    block_index_z = blockIdx.z;
+
+    thread_id_x = threadIdx.x;
+    thread_id_y = threadIdx.y;
+    thread_id_z = threadIdx.z;
+
+//    vx_printf("kernel_warpper: group=(%d, %d) thread=(%d, %d)\n", blockIdx.x, blockIdx.y, thread_id_x, thread_id_y);
+
+    Kernel2PbS_S_S_i_wrapper((void **)args);
 }
 
 vx_kernel_func_cb callbacks[] = {
-    cuda_dynproc_kerneliPiS_S_iiii_wrapper, 
+    cuda_KernelP4NodePiPbS2_S2_S1_i_wrapper, 
+    cuda_Kernel2PbS_S_S_i_wrapper, 
 };
 
 int main() {
@@ -113,7 +129,7 @@ if (memcpy_symbol_array[0] != 0) {
     //vx_printf("workdim=%d\n", ctx->work_dim);
     //vx_printf("threadIdx.x=%d threadIdx.y=%d threadIdx.z=%d\n", threadIdx.x, threadIdx.y, threadIdx.z);
 //vx_printf("execute something\n");
-    return vx_spawn_threads(3, ctx->num_groups, ctx->local_size, (vx_kernel_func_cb)callbacks[kernel_arg->kernel_idx], args); 
+    return vx_spawn_threads(3, ctx->num_groups, nullptr, (vx_kernel_func_cb)callbacks[kernel_arg->kernel_idx], args); 
 
 }
 

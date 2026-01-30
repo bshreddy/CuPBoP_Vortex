@@ -2,7 +2,7 @@
 #SBATCH --job-name="CuPBoP-Vortex-ci-cuda"
 #SBATCH -t 00:10:00                              # Duration of the job
 #SBATCH -p rg-nextgen-hpc
-#SBATCH -w dash[1-4]
+#SBATCH -w dash3
 #SBATCH -N 1
 #SBATCH --gres=gpu:1
 #SBATCH -o /tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-%j.out   # Combined output and error messages file
@@ -12,11 +12,9 @@
 cd $GITHUB_WORKSPACE
 hostname
 
-#module use /projects/tools/x86_64/ubuntu-22.04/nvhpc-24.9/modulefiles/
-#module load nvhpc/24.9
-# Installing prebuilt Vortex package
-# rm -rf vortex
 rm -rf build
+
+apptainer shell --nv -B /projects/ci-runners/CuPBoP-Vortex/:/projects/ci-runners/CuPBoP-Vortex/ /projects/ci-runners/CuPBoP-Vortex/tools/cupbop_env.sif
 source "./ci/rg-ci-setup.sh"
 #export CuPBoP_PATH=$PWD
 #bash $CuPBoP_PATH/ci/toolchain_install.sh --vortex
