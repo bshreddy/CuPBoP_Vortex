@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # Loading NVCC
-module use /projects/tools/x86_64/ubuntu-22.04/nvhpc-24.9/modulefiles/
-module load nvhpc/24.9
-export CUDA_LIB_PATH="/projects/tools/x86_64/ubuntu-22.04/nvhpc-24.9/Linux_x86_64/24.9/cuda/lib64" # Hardcoded path for rg servers ONLY
+# module use /projects/tools/x86_64/ubuntu-22.04/nvhpc-24.9/modulefiles/
+# module load nvhpc/24.9
+# export CUDA_LIB_PATH="/projects/tools/x86_64/ubuntu-22.04/nvhpc-24.9/Linux_x86_64/24.9/cuda/lib64" # Hardcoded path for rg servers ONLY
+export CUDA_PATH="/usr/local/cuda"
 
 # Setting CuPBoP Paths
 export CuPBoP_PATH=$PWD

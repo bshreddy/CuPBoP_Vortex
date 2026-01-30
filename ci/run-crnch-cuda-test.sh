@@ -16,6 +16,7 @@ hostname
 #module load nvhpc/24.9
 
 export FINAL_OUTPUT_PATH="/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out"
+apptainer shell --nv -B /projects/ci-runners/CuPBoP-Vortex/:/projects/ci-runners/CuPBoP-Vortex/ /projects/ci-runners/CuPBoP-Vortex/tools/cupbop_env.sif
 source "./ci/rg-ci-setup.sh"
 
 cd ./examples/${TEST_NAME}
