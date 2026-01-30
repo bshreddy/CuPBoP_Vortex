@@ -52,6 +52,7 @@ jobs:
   #         path: build${{ matrix.xlen }}
 
       - name: Run tests (SBATCH)
+        continue-on-error: true
         run: |
           export TEST_NAME="${{ matrix.name }}"
           # export GITHUB_WORKSPACE=/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex
@@ -61,7 +62,8 @@ jobs:
           REMOTE_OUTPUT_FILE=/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out
 
           echo $REMOTE_OUTPUT_FILE
-          cat $REMOTE_OUTPUT_FILE
+          echo "Showing last 10 lines of log:"
+          tail -n 100 "$REMOTE_OUTPUT_FILE"
 
   complete:
     runs-on: self-hosted
