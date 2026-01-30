@@ -57,6 +57,7 @@ jobs:
           SLURM_JOB_ID=$(sbatch --parsable --wait ./ci/run-crnch-cuda-test.sh)
           REMOTE_OUTPUT_FILE=/tools/ci-reports/CuPBoP_logs/CuPBoP-cuda-test-${SLURM_JOB_ID}.out
 
+          echo $REMOTE_OUTPUT_FILE
           cat $REMOTE_OUTPUT_FILE
 
   complete:
