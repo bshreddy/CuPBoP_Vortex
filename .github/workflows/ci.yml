@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [bfs, nn, pathfinder] #[gauss, nw, streamcluster, myocyte, pathfinder, lud, cfd, btree, backprop, heartwall, huffman, hotspot3D]
+        name: [backprop, dotproduct, pathfinder, psum, bfs, btree, conv3, nn, saxpy, sgemm, stencil, transpose, vecadd]
         # xlen: [32, 64]
 
     steps:
@@ -62,10 +62,10 @@ jobs:
             exit 1
           fi
 
-      - name: Verify Output
-        run: |
-          export TEST_NAME="${{ matrix.name }}"
-          cd $GITHUB_WORKSPACE
+      # - name: Verify Output
+      #   run: |
+      #     export TEST_NAME="${{ matrix.name }}"
+      #     cd $GITHUB_WORKSPACE
 
   complete:
     runs-on: self-hosted
