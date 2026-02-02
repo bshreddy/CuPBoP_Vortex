@@ -102,7 +102,7 @@ gcc -g -c ./main.c -I./util/cuda/ -o ./util/main.o
 
 # Possible to put -O3 here to generate simpler code
 echo "--- Generate bitcode files(.bc) for host and device by using clang++"
-${LLVM_PREFIX}/bin/clang++ -O0 -g -std=c++11  ./$KERNEL_CU ./util/main.o ./util/num/num.o -I../.. -I$ADDITIONAL_PATH --sysroot=/ --target=x86_64-linux-gnu --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 --cuda-path=$CUDA_PATH --cuda-gpu-arch=sm_50 -L$CUDA_PATH/lib64  -lcudart_static -ldl -lrt -pthread -save-temps -v  || true
+${LLVM_PREFIX}/bin/clang++ -O0 -g -std=c++11  ./$KERNEL_CU ./util/main.o ./util/num/num.o --sysroot=/ --target=x86_64-linux-gnu -L$CUDA_PATH/lib64 --cuda-gpu-arch=sm_50  -lcudart_static -ldl -lrt -pthread -save-temps -v  || true
 #${LLVM_PREFIX}/bin/clang++ -O0 -g -std=c++11  ./$KERNEL_CU main.c ./util/num/num.c -I../.. -I$ADDITIONAL_PATH --sysroot=/ --target=x86_64-linux-gnu --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 --cuda-path=$CUDA_PATH --cuda-gpu-arch=sm_50 -L$CUDA_PATH/lib64  -lcudart_static -ldl -lrt -pthread -save-temps -v  || true
 #${LLVM_PREFIX}/bin/clang++ --stdlib=libstdc++ -O0 -g -std=c++11  ./$KERNEL_CU -I../.. --target=x86_64-linux-gnu --gcc-toolchain=/usr/lib/gcc/x86_64-linux-gnu/13 --cuda-path=$CUDA_PATH --cuda-gpu-arch=sm_50 -L$CUDA_PATH/lib64  -lcudart_static -ldl -lrt -pthread -save-temps -v  || true
 #/software/vortex-schedule/llvm-vortex/bin/clang++ -O0 -g -std=c++11  ./$KERNEL_CU -I../.. --target=x86_64-linux-gnu --cuda-path=$CUDA_PATH --cuda-gpu-arch=sm_50 -L$CUDA_PATH/lib64  -lcudart_static -ldl -lrt -pthread -save-temps -v  || true
