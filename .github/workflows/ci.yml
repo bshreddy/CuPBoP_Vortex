@@ -44,18 +44,9 @@ jobs:
   #     - name: Checkout code
   #       uses: actions/checkout@v4
 
-
-  #     - name: Download Build Artifact
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: build-${{ matrix.xlen }}
-  #         path: build${{ matrix.xlen }}
-
       - name: Run tests (SBATCH)
-        # continue-on-error: true
         run: |
           export TEST_NAME="${{ matrix.name }}"
-          echo $TEST_NAME
           chmod +x ./ci/run-crnch-cuda-test.sh && sbatch --wait --export=ALL ./ci/run-crnch-cuda-test.sh
           echo "Showing last 100 lines of log:"
           LOG_FILE=/tools/ci-reports/CuPBoP_logs/${TEST_NAME}.out
@@ -70,6 +61,11 @@ jobs:
             echo "Execution failure."
             exit 1
           fi
+
+      - name: Verify Output
+        run: |
+          export TEST_NAME="${{ matrix.name }}"
+          cd $GITHUB_WORKSPACE
 
   complete:
     runs-on: self-hosted
