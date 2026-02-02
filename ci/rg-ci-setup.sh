@@ -40,7 +40,7 @@ export LLVM_CONFIG_PATH=$LLVM_VORTEX/bin/llvm-config
 export CC=gcc
 export CXX=g++
 export VORTEX_ARCHITECTURE=64 
-export VORTEX_SCHEDULE_FLAG=0
+export VORTEX_SCHEDULE_FLAG=2
 
 # Running Vortex Configuration
 cd $VORTEX_PATH
