@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name="CuPBoP-Vortex-ci-cuda"
-#SBATCH -t 00:30:00                              # Duration of the job
+#SBATCH -t 00:45:00                              # Duration of the job
 #SBATCH -p rg-nextgen-hpc
 #SBATCH -w dash[1-4]
 #SBATCH -N 1
