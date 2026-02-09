@@ -177,7 +177,7 @@ then
     # simx performance counter settings
     export PERF_CLASS=2
     #LD_LIBRARY_PATH=../../build/runtime/threadPool:${VORTEX_PATH}/runtime/simx:../../build/runtime:${LD_LIBRARY_PATH} gdb --arg ./host.out -q -v
-    LD_LIBRARY_PATH=../../build/runtime/threadPool:${VORTEX_PATH}/runtime:../../build/runtime:${LD_LIBRARY_PATH} ./host.out -H 1024 -w 1024 -b 16 > Batch_vortex_test1.log #>  host_out.dump
+    LD_LIBRARY_PATH=../../build/runtime/threadPool:${VORTEX_PATH}/runtime:../../build/runtime:${LD_LIBRARY_PATH} ./host.out -H 256 -w 256 -b 16 > Batch_vortex_test1.log #>  host_out.dump
     echo "--- Execution completed!"
     exit -1
 fi

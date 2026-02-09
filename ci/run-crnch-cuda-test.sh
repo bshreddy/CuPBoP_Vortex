@@ -20,6 +20,7 @@ apptainer exec --nv -B /projects/ci-runners/CuPBoP-Vortex/:/projects/ci-runners/
 
     cd ./examples/${TEST_NAME}
     bash kjrun_llvm18.sh
+    echo $VORTEX_SCHEDULE_FLAG
     exit 0
 EOF
 

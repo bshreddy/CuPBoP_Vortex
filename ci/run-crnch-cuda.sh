@@ -15,7 +15,8 @@ rm -rf build
 
 apptainer exec --nv -B /projects/ci-runners/CuPBoP-Vortex/:/projects/ci-runners/CuPBoP-Vortex/ /projects/ci-runners/CuPBoP-Vortex/tools/cupbop_env.sif /bin/bash << 'EOF'
     source "./ci/rg-ci-setup.sh"
-
+    export VORTEX_SCHEDULE_FLAG=2
+    
     # Installing CUDA headers for CuPBoP
     cd $CuPBoP_PATH
     wget "https://dl.dropboxusercontent.com/scl/fi/m9ap1tiybau4zk720t2z7/cuda-header.tar.gz?rlkey=zmdpst5l66t48ywrbtkj426nu&st=luao6zy7" -O cuda-header.tar.gz

@@ -40,7 +40,7 @@ export LLVM_CONFIG_PATH=$LLVM_VORTEX/bin/llvm-config
 export CC=gcc
 export CXX=g++
 export VORTEX_ARCHITECTURE=64 
-export VORTEX_SCHEDULE_FLAG=2
+# export VORTEX_SCHEDULE_FLAG=2 # Removed so that we can run examples with different scheduler algorithms
 
 # Running Vortex Configuration
 cd $VORTEX_PATH
