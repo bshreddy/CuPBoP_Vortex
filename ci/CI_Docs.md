@@ -29,8 +29,8 @@ A job is only marked as Passed in GitHub if the Slurm job exits with code 0 AND 
     * its work directory is at ```/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP-Vortex/CuPBoP-Vortex``` (this is where the repository will be cloned)
 * Tools are in the ```/projects/ci-runners/CuPBoP-Vortex/tools``` directory
     * LLVM-vortex is in the ```/projects/ci-runners/CuPBoP-Vortex/tools/llvm``` directory
-    * Vortex is in ```/projects/ci-runners/CuPBoP-Vortex/vortex```
-    * Other libraries are in ```/projects/ci-runners/CuPBoP-Vortex/tooldir```
+    * Vortex is in ```/projects/ci-runners/CuPBoP-Vortex/tools/vortex```
+    * Other libraries are in ```/projects/ci-runners/CuPBoP-Vortex/tools/tooldir```
     * Apptainer files (cupbop_env.sif and cupbop_env.def) are in ```/projects/ci-runners/CuPBoP-Vortex/tools```
 ## Manual Testing & Reproduction
 
