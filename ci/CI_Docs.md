@@ -49,19 +49,19 @@ The CI environment is immutable and stored in a .sif file. Enter it using:
 Bash
 ```
 apptainer shell --nv -B /projects/ci-runners/CuPBoP-Vortex/:/projects/ci-runners/CuPBoP-Vortex cupbop_env.sif
-source ~/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex/ci/rg-ci-setup.sh
+source /projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex/ci/rg-ci-setup.sh
 export VORTEX_SCHEDULE_FLAG=0 # or 2 if testing different scheduler algorithm
 ```
 3. Build CuPBoP-Vortex
 ```
-cd ~/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex/
+cd /projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex/
 rm -rf build; mkdir build; cd build
 cmake .. -DLLVM_CONFIG_PATH=`which llvm-config` # need path to llvm-config
 make
 ```
 4. Executing Tests:
 ```
-cd ~/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex/examples/YOUR_EXAMPLE
+cd /projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex/examples/YOUR_EXAMPLE
 ./kjrun_llvm18.sh
 ```
 ## Miscelaneous Notes
