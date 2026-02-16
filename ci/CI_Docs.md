@@ -48,7 +48,7 @@ srun -p rg-nextgen-hpc -w dash[1-4] -N 1 --cpus-per-task=4 --mem=32G --gres=gpu:
 The CI environment is immutable and stored in a .sif file. Enter it using:
 Bash
 ```
-apptainer shell --nv -B /projects/ci-runners/CuPBoP-Vortex/:/test cupbop_env.sif
+apptainer shell --nv -B /projects/ci-runners/CuPBoP-Vortex/:/projects/ci-runners/CuPBoP-Vortex cupbop_env.sif
 source ~/projects/ci-runners/CuPBoP-Vortex/temp-runner/_work/CuPBoP_Vortex/CuPBoP_Vortex/ci/rg-ci-setup.sh
 export VORTEX_SCHEDULE_FLAG=0 # or 2 if testing different scheduler algorithm
 ```
