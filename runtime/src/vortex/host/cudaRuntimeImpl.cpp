@@ -613,9 +613,9 @@ cudaError_t cudaGetDeviceProperties(cudaDeviceProp *deviceProp, int device) {
   return cudaSuccess;
 }
 
-cudaError_t cudaGetDeviceProperties_v2(cudaDeviceProp *deviceProp, int device) {
-  return cudaGetDeviceProperties(deviceProp, device);
-}
+// cudaError_t cudaGetDeviceProperties_v2(cudaDeviceProp *deviceProp, int device) {
+//   return cudaGetDeviceProperties(deviceProp, device);
+// }
 
 
 static cudaError_t lastError = cudaSuccess;

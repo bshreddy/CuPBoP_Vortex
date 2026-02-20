@@ -55,10 +55,11 @@ return p;
 
 
  extern "C" {
-    extern void dynproc_kerneliPiS_S_iiii_wrapper(void *args);
+    extern void bpnn_layerforward_CUDAPfS_S_S_ii_wrapper(void *args);
+    extern void bpnn_adjust_weights_cudaPfiS_iS_S__wrapper(void *args);
 }
 
-void cuda_dynproc_kerneliPiS_S_iiii_wrapper(void* args) {
+void cuda_bpnn_layerforward_CUDAPfS_S_S_ii_wrapper(void* args) {
     block_index_x = blockIdx.x;
     block_index_y = blockIdx.y;
     block_index_z = blockIdx.z;
@@ -69,11 +70,26 @@ void cuda_dynproc_kerneliPiS_S_iiii_wrapper(void* args) {
 
 //    vx_printf("kernel_warpper: group=(%d, %d) thread=(%d, %d)\n", blockIdx.x, blockIdx.y, thread_id_x, thread_id_y);
 
-    dynproc_kerneliPiS_S_iiii_wrapper((void **)args);
+    bpnn_layerforward_CUDAPfS_S_S_ii_wrapper((void **)args);
+}
+
+void cuda_bpnn_adjust_weights_cudaPfiS_iS_S__wrapper(void* args) {
+    block_index_x = blockIdx.x;
+    block_index_y = blockIdx.y;
+    block_index_z = blockIdx.z;
+
+    thread_id_x = threadIdx.x;
+    thread_id_y = threadIdx.y;
+    thread_id_z = threadIdx.z;
+
+//    vx_printf("kernel_warpper: group=(%d, %d) thread=(%d, %d)\n", blockIdx.x, blockIdx.y, thread_id_x, thread_id_y);
+
+    bpnn_adjust_weights_cudaPfiS_iS_S__wrapper((void **)args);
 }
 
 vx_kernel_func_cb callbacks[] = {
-    cuda_dynproc_kerneliPiS_S_iiii_wrapper, 
+    cuda_bpnn_layerforward_CUDAPfS_S_S_ii_wrapper, 
+    cuda_bpnn_adjust_weights_cudaPfiS_iS_S__wrapper, 
 };
 
 int main() {
