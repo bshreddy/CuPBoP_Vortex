@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
 
 
   //dumpFile(program, "4.ll");
-  
+
   // VerifyModule(program);
   std::cout << "insert_warp_loop\n" << std::flush;
   printIR(program);
