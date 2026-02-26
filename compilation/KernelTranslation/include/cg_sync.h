@@ -1,9 +1,9 @@
 #ifndef __CG_SYNC_H__
 #define __CG_SYNC_H__
 
-#include <string>
-#include <llvm/IR/Module.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/Module.h>
+#include <string>
 
 bool isCGThreadBlockSync(const std::string &FuncNameStr);
 

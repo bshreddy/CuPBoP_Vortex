@@ -8,13 +8,13 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 #include <set>
 #include <vector>
 
@@ -28,7 +28,8 @@ using namespace std;
 ReplaceWarpLevelPrimitive::ReplaceWarpLevelPrimitive(MapOpt mapping)
     : mapping_(mapping) {}
 
-PreservedAnalyses ReplaceWarpLevelPrimitive::run(Module &m, ModuleAnalysisManager&) {
+PreservedAnalyses ReplaceWarpLevelPrimitive::run(Module &m,
+                                                 ModuleAnalysisManager &) {
   replaceWarpShfl(m);
   replaceWarpVote(m);
   return PreservedAnalyses::all();
@@ -37,10 +38,8 @@ PreservedAnalyses ReplaceWarpLevelPrimitive::run(Module &m, ModuleAnalysisManage
 bool ReplaceWarpLevelPrimitive::replaceWarpVote(Module &m) {
 
   DenseSet<StringRef> voteFuncs;
-  voteFuncs = {"llvm.nvvm.vote.any.sync",
-              "llvm.nvvm.vote.all.sync",
-              "llvm.nvvm.vote.uni.sync",
-              "llvm.nvvm.vote.ballot.sync"};
+  voteFuncs = {"llvm.nvvm.vote.any.sync", "llvm.nvvm.vote.all.sync",
+               "llvm.nvvm.vote.uni.sync", "llvm.nvvm.vote.ballot.sync"};
 
   // get the callee functions to be replaced
   set<CallInst *> replace;
@@ -196,14 +195,10 @@ bool ReplaceWarpLevelPrimitive::replaceWarpShfl(Module &m) {
 
   DenseSet<StringRef> shflFuncs;
 
-  shflFuncs = {"llvm.nvvm.shfl.sync.down.i32",
-                "llvm.nvvm.shfl.sync.up.i32",
-                "llvm.nvvm.shfl.sync.bfly.i32",
-                "llvm.nvvm.shfl.sync.idx.i32",
-                "llvm.nvvm.shfl.sync.down.f32",
-                "llvm.nvvm.shfl.sync.up.f32",
-                "llvm.nvvm.shfl.sync.bfly.f32",
-                "llvm.nvvm.shfl.sync.idx.f32"};
+  shflFuncs = {"llvm.nvvm.shfl.sync.down.i32", "llvm.nvvm.shfl.sync.up.i32",
+               "llvm.nvvm.shfl.sync.bfly.i32", "llvm.nvvm.shfl.sync.idx.i32",
+               "llvm.nvvm.shfl.sync.down.f32", "llvm.nvvm.shfl.sync.up.f32",
+               "llvm.nvvm.shfl.sync.bfly.f32", "llvm.nvvm.shfl.sync.idx.f32"};
 
   // get the callee functions to be replaced
   set<CallInst *> replace;
@@ -334,14 +329,17 @@ void ReplaceWarpLevelPrimitive::replaceWarpShfl1to1(
     Value *arg2 = ci->getArgOperand(2);
     Value *cparam = ci->getArgOperand(3);
 
-    if (mask->getType() != I32) mask = builder.CreateIntCast(mask, I32, false);
-    if (arg2->getType() != I32) arg2 = builder.CreateIntCast(arg2, I32, false);
-    if (cparam->getType() != I32) cparam = builder.CreateIntCast(cparam, I32, false);
+    if (mask->getType() != I32)
+      mask = builder.CreateIntCast(mask, I32, false);
+    if (arg2->getType() != I32)
+      arg2 = builder.CreateIntCast(arg2, I32, false);
+    if (cparam->getType() != I32)
+      cparam = builder.CreateIntCast(cparam, I32, false);
 
     bool isFloat = (ci->getType() == F32);
 
     FunctionCallee callee;
-    std::vector<Value*> args;
+    std::vector<Value *> args;
 
     if (name.find(".down.") != string::npos) {
       if (isFloat) {
@@ -350,7 +348,8 @@ void ReplaceWarpLevelPrimitive::replaceWarpShfl1to1(
       } else {
         FunctionType *FT = FunctionType::get(I32, {I32, I32, I32, I32}, false);
         callee = m.getOrInsertFunction("_Z16__shfl_down_synciiii", FT);
-        if (val->getType() != I32) val = builder.CreateIntCast(val, I32, false);
+        if (val->getType() != I32)
+          val = builder.CreateIntCast(val, I32, false);
       }
       args = {mask, val, arg2, cparam};
     } else if (name.find(".up.") != string::npos) {
@@ -360,7 +359,8 @@ void ReplaceWarpLevelPrimitive::replaceWarpShfl1to1(
       } else {
         FunctionType *FT = FunctionType::get(I32, {I32, I32, I32, I32}, false);
         callee = m.getOrInsertFunction("_Z14__shfl_up_synciiii", FT);
-        if (val->getType() != I32) val = builder.CreateIntCast(val, I32, false);
+        if (val->getType() != I32)
+          val = builder.CreateIntCast(val, I32, false);
       }
       args = {mask, val, arg2, cparam};
     } else if (name.find(".bfly.") != string::npos) {
@@ -370,7 +370,8 @@ void ReplaceWarpLevelPrimitive::replaceWarpShfl1to1(
       } else {
         FunctionType *FT = FunctionType::get(I32, {I32, I32, I32, I32}, false);
         callee = m.getOrInsertFunction("_Z15__shfl_xor_synciiii", FT);
-        if (val->getType() != I32) val = builder.CreateIntCast(val, I32, false);
+        if (val->getType() != I32)
+          val = builder.CreateIntCast(val, I32, false);
       }
       args = {mask, val, arg2, cparam};
     } else if (name.find(".idx.") != string::npos) {
@@ -380,7 +381,8 @@ void ReplaceWarpLevelPrimitive::replaceWarpShfl1to1(
       } else {
         FunctionType *FT = FunctionType::get(I32, {I32, I32, I32, I32}, false);
         callee = m.getOrInsertFunction("_Z11__shfl_synciiii", FT);
-        if (val->getType() != I32) val = builder.CreateIntCast(val, I32, false);
+        if (val->getType() != I32)
+          val = builder.CreateIntCast(val, I32, false);
       }
       args = {mask, val, arg2, cparam};
     } else {

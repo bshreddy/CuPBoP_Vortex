@@ -1,10 +1,10 @@
 #include "init.h"
 #include "memory_hierarchy.h"
 #include "tool.h"
-#include <fstream>
-#include <set>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <set>
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
@@ -17,12 +17,12 @@
 #include "llvm/PassRegistry.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetSelect.h"
-//LLVM18
-//#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+// LLVM18
+// #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
-//extern void initializeInstrumentation(PassRegistry&);
+// extern void initializeInstrumentation(PassRegistry&);
 
 using namespace llvm;
 
@@ -149,31 +149,32 @@ void create_global_variable(llvm::Module *M) {
   new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
                            NULL, "__warps_per_group", NULL,
                            llvm::GlobalValue::NotThreadLocal, 0, false);
-  auto block_index_x = new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
-                           NULL, "block_index_x", NULL,
-                           llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
-  auto block_index_y = new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
-                           NULL, "block_index_y", NULL,
-                           llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
-  auto block_index_z = new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
-                           NULL, "block_index_z", NULL,
-                           llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
-  auto thread_index_x = new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
-                           NULL, "thread_id_x", NULL,
-                           llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
-  auto thread_index_y = new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
-                           NULL, "thread_id_y", NULL,
-                           llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
-  auto thread_index_z = new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
-                           NULL, "thread_id_z", NULL,
-                           llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
-  auto local_group_id = new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
-                           NULL, "__local_group_id", NULL,
-                           llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
-  auto dyn_shared_mem_size = new llvm::GlobalVariable(*M, I32, false, llvm::GlobalValue::ExternalLinkage,
-                           NULL, "dyn_shared_mem_size", NULL,
-                           llvm::GlobalValue::NotThreadLocal, 0, false);
-                           
+  auto block_index_x = new llvm::GlobalVariable(
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL, "block_index_x",
+      NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
+  auto block_index_y = new llvm::GlobalVariable(
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL, "block_index_y",
+      NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
+  auto block_index_z = new llvm::GlobalVariable(
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL, "block_index_z",
+      NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
+  auto thread_index_x = new llvm::GlobalVariable(
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL, "thread_id_x",
+      NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
+  auto thread_index_y = new llvm::GlobalVariable(
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL, "thread_id_y",
+      NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
+  auto thread_index_z = new llvm::GlobalVariable(
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL, "thread_id_z",
+      NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
+  auto local_group_id = new llvm::GlobalVariable(
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL,
+      "__local_group_id", NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0,
+      false);
+  auto dyn_shared_mem_size = new llvm::GlobalVariable(
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL,
+      "dyn_shared_mem_size", NULL, llvm::GlobalValue::NotThreadLocal, 0, false);
+
   // LLVM is broken when using TLS with dynamic linkage on RISCV
   // and the generated binary contains invalid instructions.
   // Disable dynamic linkage since we don't create a shared library.
@@ -196,8 +197,8 @@ void create_global_variable(llvm::Module *M) {
       "warp_vote", NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
   warp_vote->setAlignment(llvm::MaybeAlign(32));
   auto vote_count = new llvm::GlobalVariable(
-      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL, 
-      "vote_count", NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
+      *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL, "vote_count",
+      NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
 }
 
 void remove_metadata(llvm::Module *M) {
@@ -229,7 +230,7 @@ void init_llvm_pass() {
   initializeAnalysis(Registry);
   initializeTransformUtils(Registry);
   initializeInstCombine(Registry);
-  //initializeInstrumentation(Registry);
+  // initializeInstrumentation(Registry);
   initializeTarget(Registry);
 
   llvm::StringMap<llvm::cl::Option *> &opts = llvm::cl::getRegisteredOptions();
@@ -396,7 +397,6 @@ void replace_cuda_math_built_in(llvm::Module *M) {
   }
 }
 
-
 void init_block(llvm::Module *M, std::ofstream &fout) {
   // using official llvm preprocess
   llvm_preprocess(M);
@@ -434,37 +434,29 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
   if (char *env = std::getenv("VORTEX_SCHEDULE_FLAG")) {
     schedule = std::stoi(std::string(env));
   }
-  if (char *env = std::getenv("VORTEX_LOCALMEM_FLAG"))
-  {
+  if (char *env = std::getenv("VORTEX_LOCALMEM_FLAG")) {
     local_mem_use = std::stoi(std::string(env));
   }
 
-  if (schedule == 0)
-  {
+  if (schedule == 0) {
     mem_share2global(M);
   }
 
-  else if (schedule == 2)
-  {
-    if (local_mem_use == 1)
-    {
+  else if (schedule == 2) {
+    if (local_mem_use == 1) {
       mem_share2local(M);
-    }
-    else
-    {
+    } else {
       mem_share2global_sche_2(M);
     }
-  }
-    else 
-    {
+  } else {
     std::cerr << "Error: invalid VORTEX_SCHEDULE_FLAG (use 0 or 2)\n";
     std::exit(1);
-    }
+  }
   // replace share memory
   mem_constant2global(M, fout);
   // replace asm Inline
   replace_asm_call(M);
 
   // replace dynamic shared memory
-  //replace_dynamic_shared_memory(M);
+  // replace_dynamic_shared_memory(M);
 }

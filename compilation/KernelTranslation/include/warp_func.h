@@ -6,10 +6,10 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 #include <set>
 
 namespace cupbop {
@@ -17,7 +17,8 @@ namespace cupbop {
 using namespace llvm;
 using namespace std;
 
-class ReplaceWarpLevelPrimitive : public PassInfoMixin<ReplaceWarpLevelPrimitive> {
+class ReplaceWarpLevelPrimitive
+    : public PassInfoMixin<ReplaceWarpLevelPrimitive> {
 
 private:
   /// the mapping options
@@ -27,7 +28,7 @@ public:
   /// @brief construct warp level primitives & mapping
   ReplaceWarpLevelPrimitive(MapOpt mapping);
   /// @brief replace warp level primitives
-  PreservedAnalyses run(Module &M, ModuleAnalysisManager&);
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &);
 
 private:
   /// @brief replace warp vote
@@ -62,4 +63,4 @@ private:
   void replaceWarpShflX86(Module &m, const set<CallInst *> &replace);
 };
 
-}
+} // namespace cupbop

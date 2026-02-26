@@ -93,11 +93,14 @@ bool isKernelFunction(llvm::Module *M, llvm::Function *F) {
 
 bool isDeviceFunction(Module *M, Function *F) {
   // Must be device-side code
-  if (!(M->getTargetTriple().substr(0,5) == "nvptx")) return false;
+  if (!(M->getTargetTriple().substr(0, 5) == "nvptx"))
+    return false;
   // Skip declarations and intrinsics
-  if (F->isDeclaration() || F->isIntrinsic()) return false;
+  if (F->isDeclaration() || F->isIntrinsic())
+    return false;
   // Skip kernels
-  if (isKernelFunction(M, F)) return false;
+  if (isKernelFunction(M, F))
+    return false;
   return true;
 }
 
@@ -356,8 +359,7 @@ void replace_built_in_function(llvm::Module *M) {
               auto val = createLoad(builder, block_size_addr);
               Call->replaceAllUsesWith(val);
               need_remove.push_back(Call);
-            }
-            else if (func_name == "llvm.nvvm.read.ptx.sreg.tid.x") {
+            } else if (func_name == "llvm.nvvm.read.ptx.sreg.tid.x") {
               if (schedule == 2) {
                 IRBuilder<> builder(context);
                 builder.SetInsertPoint(Call);
@@ -728,12 +730,13 @@ void replace_built_in_function(llvm::Module *M) {
                        func_name == "__nv_powf" || func_name == "__nv_logf" ||
                        func_name == "__nv_expf" || func_name == "__nv_fabsf" ||
                        func_name == "__nv_log10f" ||
-                       func_name == "__nv_fmodf" || func_name == "__nv_sqrt" || func_name == "__nv_rsqrtf" ||
+                       func_name == "__nv_fmodf" || func_name == "__nv_sqrt" ||
+                       func_name == "__nv_rsqrtf" ||
                        func_name == "__nv_sqrtf" || func_name == "__nv_exp" ||
                        func_name == "__nv_isnanf" ||
                        func_name == "__nv_isinff" || func_name == "__nv_powi" ||
-                       func_name == "__nv_powif" ||
-                       func_name == "__nv_ffs" || func_name == "__nv_popc") {
+                       func_name == "__nv_powif" || func_name == "__nv_ffs" ||
+                       func_name == "__nv_popc") {
               dbgs() << "Removing call to " << func_name << "\n";
               Call->getCalledFunction()->deleteBody();
             } else if (func_name == "llvm.nvvm.fma.rn.d") {
@@ -760,7 +763,8 @@ void replace_built_in_function(llvm::Module *M) {
               Call->getCalledFunction()->setName("__nvvm_fmax_f");
             } else if (func_name == "llvm.nvvm.membar.gl") {
               Call->getCalledFunction()->setName("__nvvm_membar_gl");
-            } else if (func_name.find("llvm.nvvm.atomic.load.inc.32") != std::string::npos) {
+            } else if (func_name.find("llvm.nvvm.atomic.load.inc.32") !=
+                       std::string::npos) {
               Call->getCalledFunction()->setName("__nvvm_atomic_load_inc_32");
             } else if (func_name == "llvm.nvvm.div.approx.ftz.f") {
               Call->getCalledFunction()->setName("__nvvm_div_approx_ftz_f");

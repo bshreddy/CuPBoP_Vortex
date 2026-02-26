@@ -5,10 +5,10 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include <iostream>
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <regex>
 #include <set>
@@ -28,9 +28,8 @@ void InsertSyncAfterKernelLaunch(llvm::Module *M) {
   llvm::FunctionCallee _f =
       M->getOrInsertFunction("cudaDeviceSynchronize", LauncherFuncT);
   llvm::Function *func_launch = llvm::cast<llvm::Function>(_f.getCallee());
-  //std::set<llvm::Instruction *> kernel_launch_instruction;
+  // std::set<llvm::Instruction *> kernel_launch_instruction;
   std::set<std::string> launch_function_name;
-
 
   for (Module::iterator i = M->begin(), e = M->end(); i != e; ++i) {
     Function *F = &(*i);
@@ -46,7 +45,7 @@ void InsertSyncAfterKernelLaunch(llvm::Module *M) {
             if (calledFunction->getName().starts_with("cudaLaunchKernel")) {
               // F is a kernel launch function
               launch_function_name.insert(func_name);
-              //kernel_launch_instruction.insert(callInst);
+              // kernel_launch_instruction.insert(callInst);
             }
           }
         }
@@ -66,16 +65,17 @@ void InsertSyncAfterKernelLaunch(llvm::Module *M) {
                 launch_function_name.end()) {
               // insert a sync after launch
 
-              //if (callInst->getNextNonDebugInstruction()) {
-              //  llvm::CallInst::Create(func_launch, "",
-              //                         callInst->getNextNonDebugInstruction());
-              //}
-              // Vortex specific code
+              // if (callInst->getNextNonDebugInstruction()) {
+              //   llvm::CallInst::Create(func_launch, "",
+              //                          callInst->getNextNonDebugInstruction());
+              // }
+              //  Vortex specific code
               if (callInst->getNextNonDebugInstruction()) {
-                  llvm::CallInst *newCall = llvm::CallInst::Create(func_launch, "");
-                  newCall->insertBefore(callInst->getNextNonDebugInstruction());
-                  // Copy debug info from the current instruction to the new one
-                  newCall->setDebugLoc(callInst->getDebugLoc());
+                llvm::CallInst *newCall =
+                    llvm::CallInst::Create(func_launch, "");
+                newCall->insertBefore(callInst->getNextNonDebugInstruction());
+                // Copy debug info from the current instruction to the new one
+                newCall->setDebugLoc(callInst->getDebugLoc());
               }
             }
           }
@@ -83,19 +83,16 @@ void InsertSyncAfterKernelLaunch(llvm::Module *M) {
       }
     }
   }
-  
 }
-
-
 
 // Change to i8* bitcast (i8* (i8*)* @_Z9vecPKiS0_Pii_wrapper to i8*)
 // Original: i8* bitcast (void (i32*, i32*, i32*, i32)* @_Z9vecPKiS0_Pii to i8*)
 void ReplaceKernelLaunch(llvm::Module *M) {
   LLVMContext &context = M->getContext();
   auto VoidTy = llvm::Type::getVoidTy(context);
-  //LLVM 18 
+  // LLVM 18
   auto I8 = PointerType::getUnqual(context);
-  //auto I8 = llvm::Type::getInt8PtrTy(context);
+  // auto I8 = llvm::Type::getInt8PtrTy(context);
 
   std::map<std::string, Function *> kernels;
 
@@ -133,7 +130,7 @@ void ReplaceKernelLaunch(llvm::Module *M) {
   (float*, float*, float*, i32, i32, i32)* @_Z4Fan2PfS_S_iii to i8*), i8*
   getelementptr inbounds ([17 x i8], [17 x i8]* @1, i64 0, i64 0), i8*
   getelementptr inbounds ([17 x i8], [17 x i8]* @1, i64 0, i64 0), i32 -1, i8*
-  null, i8* null, i8* null, i8* null, i32* null) ret void 
+  null, i8* null, i8* null, i8* null, i32* null) ret void
     }
 
   */
@@ -172,12 +169,10 @@ void ReplaceKernelLaunch(llvm::Module *M) {
       }
     }
   }
-bool host_changed = false;
+  bool host_changed = false;
 
-std::vector<llvm::Instruction *> need_remove_inst;
-int kernel_idx = 0;
-
-
+  std::vector<llvm::Instruction *> need_remove_inst;
+  int kernel_idx = 0;
 
   for (Module::iterator i = M->begin(), e = M->end(); i != e; ++i) {
     Function *F = &(*i);
@@ -192,11 +187,13 @@ int kernel_idx = 0;
         if (llvm::CallBase *callInst = llvm::dyn_cast<llvm::CallBase>(inst)) {
           llvm::CallInst *callInst_inst = llvm::dyn_cast<llvm::CallInst>(inst);
           if (Function *calledFunction = callInst->getCalledFunction()) {
-            //print function name
-            std::cout << "function_name: " << calledFunction->getName().str() << std::endl;
+            // print function name
+            std::cout << "function_name: " << calledFunction->getName().str()
+                      << std::endl;
             if (calledFunction->getName().starts_with("cudaLaunchKernel")) {
-              //print function name
-              std::cout << "function_name2: " << calledFunction->getName().str() << std::endl;
+              // print function name
+              std::cout << "function_name2: " << calledFunction->getName().str()
+                        << std::endl;
 
               Value *callOperand = callInst->getArgOperand(0);
 
@@ -211,108 +208,119 @@ int kernel_idx = 0;
                     dyn_cast<Function>(callOperand->stripPointerCasts());
               }
 
-                FunctionType *ft = calledFunction->getFunctionType();
-                std::cout << " Parent (Caller) Function Name: " << func_name
-                          << ", cudaLaunchKernel Function: "
-                          << functionOperand->getName().str() << ", args "
-                          << functionOperand->arg_size() << std::endl;
-                
-                auto rep = kernels.find(functionOperand->getName().str());
-                if (rep != kernels.end()) {
-                  Function *FC = rep->second;
-                  BitCastInst *B = new BitCastInst(FC, I8, "", callInst);
-                  callInst->setArgOperand(0, B);
+              FunctionType *ft = calledFunction->getFunctionType();
+              std::cout << " Parent (Caller) Function Name: " << func_name
+                        << ", cudaLaunchKernel Function: "
+                        << functionOperand->getName().str() << ", args "
+                        << functionOperand->arg_size() << std::endl;
 
+              auto rep = kernels.find(functionOperand->getName().str());
+              if (rep != kernels.end()) {
+                Function *FC = rep->second;
+                BitCastInst *B = new BitCastInst(FC, I8, "", callInst);
+                callInst->setArgOperand(0, B);
+
+                continue;
+              }
+
+              std::vector<Type *> Params;
+              Params.push_back(I8);
+              FunctionType *FT = FunctionType::get(VoidTy, Params, false);
+
+              /*
+                Because of the TODO in the 2nd if statement, need to get the
+                prior name before _host is add
+              */
+              std::string oldName = functionOperand->getName().str();
+
+              // if parent function is __host and same as the
+              // cudaKernelLaunch
+              std::string newName = oldName + "_wrapper";
+              if (func_name == oldName && host_changed &&
+                  oldName.find("_host") != std::string::npos) {
+                newName = oldName.substr(0, oldName.length() - 5) + "_wrapper";
+              }
+
+              // For LLVM>=14, it will add _device_stub prefix for the kernel
+              // name, thus, we need to remove the prefix
+              // example:
+              // from: _Z24__device_stub__HistogramPjS_jj
+              // to: HistogramPjS_jj
+              newName = std::regex_replace(newName,
+                                           std::regex("__device_stub__"), "");
+              // remove _Z24
+              for (int i = 2; i < newName.length(); i++) {
+                if (newName[i] >= '0' && newName[i] <= '9')
                   continue;
-                }
+                newName = newName.substr(i);
+                break;
+              }
 
-                std::vector<Type *> Params;
-                Params.push_back(I8);
-                FunctionType *FT = FunctionType::get(VoidTy, Params, false);
+              std::cout << "Change Kernel Name to: " << newName << std::endl;
 
-                /*
-                  Because of the TODO in the 2nd if statement, need to get the
-                  prior name before _host is add
-                */
-                std::string oldName = functionOperand->getName().str();
+              // FROM HERE
+              /* wrapper function, removed since vortex doesn't require wrapper
+              function Function *F = Function::Create(FT,
+              Function::ExternalLinkage, newName, M); F->setDSOLocal(true);
+                F->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
 
+              BitCastInst *BC = new BitCastInst(F, I8, "", callInst);
+              callInst->setArgOperand(0, BC);
+              kernels.insert({functionOperand->getName().str(), F});
+              // UNTIL here */
 
-                // if parent function is __host and same as the
-                // cudaKernelLaunch
-                std::string newName = oldName + "_wrapper";
-                if (func_name == oldName && host_changed &&
-                    oldName.find("_host") != std::string::npos) {
-                  newName =
-                      oldName.substr(0, oldName.length() - 5) + "_wrapper";
-                }
+              // Creating a new Integercaset for number of arguments
+              Value *arg_num = dyn_cast<Value>(
+                  llvm::ConstantInt::get(llvm::Type::getInt32Ty(context),
+                                         functionOperand->arg_size()));
+              CastInst *BC_argnum = CastInst::CreateIntegerCast(
+                  arg_num, llvm::Type::getInt32Ty(context), false, "",
+                  callInst_inst);
 
-                // For LLVM>=14, it will add _device_stub prefix for the kernel
-                // name, thus, we need to remove the prefix
-                // example:
-                // from: _Z24__device_stub__HistogramPjS_jj
-                // to: HistogramPjS_jj
-                newName = std::regex_replace(newName,
-                                             std::regex("__device_stub__"), "");
-                // remove _Z24
-                for (int i = 2; i < newName.length(); i++) {
-                  if (newName[i] >= '0' && newName[i] <= '9')
-                    continue;
-                  newName = newName.substr(i);
-                  break;
-                }
+              // Creating a new Cast for kernel name
+              IRBuilder<> Builder(inst);
+              llvm::Value *kernel_name_ptr = Builder.CreateGlobalStringPtr(
+                  newName.substr(0, newName.length() - 8));
+              callInst->setArgOperand(0, kernel_name_ptr);
 
-                std::cout << "Change Kernel Name to: " << newName << std::endl;
-                
-                // FROM HERE
-                /* wrapper function, removed since vortex doesn't require wrapper function
-                Function *F = Function::Create(FT, Function::ExternalLinkage, newName, M);
-                  F->setDSOLocal(true);
-                  F->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+              //// For temporary reason, will delete it later.
+              // Value *kernel_name =
+              // llvm::ConstantArray::get(llvm::Type::getInt8PtrTy(context),
+              // functionOperand->getName()); Value *kernel_name =
+              // llvm::ConstantDataArray::getString(context,
+              // functionOperand->getName(), true); Value *kernel_name =
+              // dyn_cast<Value>(Builder.CreateGlobalStringPtr(oldName));
+              // CastInst *BC_kernel_name =
+              // CastInst::CreatePointerCast(kernel_name,
+              // kernel_name->getPointerElementType(), "", BC_argnum);
 
-                BitCastInst *BC = new BitCastInst(F, I8, "", callInst);
-                callInst->setArgOperand(0, BC);
-                kernels.insert({functionOperand->getName().str(), F});
-                // UNTIL here */
+              std::vector<Value *> ArgsT;
+              for (int oper_idx = 0; oper_idx <= 7; ++oper_idx) {
+                ArgsT.push_back(callInst_inst->getArgOperand(oper_idx));
+              }
+              ArgsT.push_back(BC_argnum);
 
-                // Creating a new Integercaset for number of arguments 
-                Value *arg_num = dyn_cast<Value>(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), functionOperand->arg_size()));
-                CastInst *BC_argnum = CastInst::CreateIntegerCast(arg_num, llvm::Type::getInt32Ty(context), false, "", callInst_inst);
+              std::vector<llvm::Type *> ArgTys;
+              for (Value *V : ArgsT)
+                ArgTys.push_back(V->getType());
 
-                // Creating a new Cast for kernel name
-                IRBuilder<> Builder(inst);
-                llvm::Value *kernel_name_ptr = Builder.CreateGlobalStringPtr(newName.substr(0, newName.length() - 8));
-                callInst->setArgOperand(0, kernel_name_ptr);
+              llvm::FunctionType *func_Type = FunctionType::get(
+                  llvm::Type::getInt32Ty(context), ArgTys, false);
 
-                //// For temporary reason, will delete it later.
-                //Value *kernel_name = llvm::ConstantArray::get(llvm::Type::getInt8PtrTy(context), functionOperand->getName());
-                //Value *kernel_name = llvm::ConstantDataArray::getString(context, functionOperand->getName(), true);
-                //Value *kernel_name = dyn_cast<Value>(Builder.CreateGlobalStringPtr(oldName));
-                //CastInst *BC_kernel_name = CastInst::CreatePointerCast(kernel_name, kernel_name->getPointerElementType(), "", BC_argnum);
+              llvm::FunctionCallee _f =
+                  M->getOrInsertFunction("cudaLaunchKernel_vortex", func_Type);
+              llvm::Function *calledFunction_argnum =
+                  llvm::cast<llvm::Function>(_f.getCallee());
+              // calledFunction_argnum->setDSOLocal(true);
+              // calledFunction_argnum->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
 
-                std::vector<Value*> ArgsT;
-                for (int oper_idx = 0; oper_idx <= 7; ++oper_idx) {
-                  ArgsT.push_back(callInst_inst->getArgOperand(oper_idx));}
-                ArgsT.push_back(BC_argnum);
-
-                std::vector<llvm::Type *> ArgTys;
-                for (Value *V : ArgsT)
-                  ArgTys.push_back(V->getType());
-
-                llvm::FunctionType *func_Type = FunctionType::get(llvm::Type::getInt32Ty(context), ArgTys, false);
-                
-                llvm::FunctionCallee _f = M->getOrInsertFunction("cudaLaunchKernel_vortex", func_Type);
-                llvm::Function *calledFunction_argnum = llvm::cast<llvm::Function>(_f.getCallee());
-                  //calledFunction_argnum->setDSOLocal(true);
-                  //calledFunction_argnum->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-
-                CallInst *CI_argnum = CallInst::Create(calledFunction_argnum, ArgsT, "", callInst_inst);
-                callInst_inst->replaceAllUsesWith(CI_argnum);
-                      //ReplaceInstWithInst(callInst_inst, NewCI);
-                CI_argnum->setCallingConv(callInst_inst->getCallingConv());
-                CI_argnum->setDebugLoc(callInst_inst->getDebugLoc());
-                need_remove_inst.push_back(callInst_inst);
-              
-            
+              CallInst *CI_argnum = CallInst::Create(calledFunction_argnum,
+                                                     ArgsT, "", callInst_inst);
+              callInst_inst->replaceAllUsesWith(CI_argnum);
+              // ReplaceInstWithInst(callInst_inst, NewCI);
+              CI_argnum->setCallingConv(callInst_inst->getCallingConv());
+              CI_argnum->setDebugLoc(callInst_inst->getDebugLoc());
+              need_remove_inst.push_back(callInst_inst);
 
             } else if (cuda_register_kernel_names.find(
                            calledFunction->getName().str()) !=
@@ -320,7 +328,7 @@ int kernel_idx = 0;
               // if the called function collides with kernel definiton
               // TODO: some reason changes all occurences of the function name
               // for both cudaKernelLaunch calls and regular function call
-              
+
               host_changed = true;
               calledFunction->setName(calledFunction->getName() + "_host");
               std::cout << std::endl;
@@ -332,20 +340,15 @@ int kernel_idx = 0;
       }
     }
   }
-  for (auto inst : need_remove_inst) 
+  for (auto inst : need_remove_inst)
     inst->eraseFromParent();
-  
-
 }
-
-
-
 
 void ReplaceMemcpyToSymbol(llvm::Module *M) {
   LLVMContext &context = M->getContext();
   auto I32 = llvm::Type::getInt32Ty(context);
   std::vector<llvm::Instruction *> need_remove;
-  std::string arg0_name;  
+  std::string arg0_name;
 
   for (Module::iterator F = M->begin(); F != M->end(); ++F) {
     for (auto BB = F->begin(); BB != F->end(); ++BB) {
@@ -354,25 +357,30 @@ void ReplaceMemcpyToSymbol(llvm::Module *M) {
           if (Call->getCalledFunction()) {
             auto func_name = Call->getCalledOperand()->getName().str();
             if (func_name == "cudaMemcpyToSymbol") {
-              
+
               llvm::Function *parentFunction = (Call->getParent()->getParent());
 
-              //get the name of the function
+              // get the name of the function
               auto parentFunction_name = parentFunction->getName().str();
               printf("parentFunction_name: %s\n", parentFunction_name.c_str());
 
-              //Go through every instruction in every module to find function call with the name of parentFunction_name
+              // Go through every instruction in every module to find function
+              // call with the name of parentFunction_name
               for (Module::iterator PF = M->begin(); PF != M->end(); ++PF) {
                 for (auto PBB = PF->begin(); PBB != PF->end(); ++PBB) {
                   for (auto PBI = PBB->begin(); PBI != PBB->end(); PBI++) {
                     if (auto Call_parent = dyn_cast<CallInst>(PBI)) {
                       if (Call_parent->getCalledFunction()) {
-                        auto func_name = Call_parent->getCalledOperand()->getName().str();
+                        auto func_name =
+                            Call_parent->getCalledOperand()->getName().str();
                         if (func_name == parentFunction_name) {
-                          //get first argument of the called function of call_parent
+                          // get first argument of the called function of
+                          // call_parent
                           auto arg0 = Call_parent->getArgOperand(0);
-                          //print the name of the value that arg0 is pointing to
-                          arg0_name += arg0->stripPointerCasts()->getName().str();
+                          // print the name of the value that arg0 is pointing
+                          // to
+                          arg0_name +=
+                              arg0->stripPointerCasts()->getName().str();
                           arg0_name += " ";
                           printf("arg0_name: %s\n", arg0_name.c_str());
                         }
@@ -399,23 +407,26 @@ void ReplaceMemcpyToSymbol(llvm::Module *M) {
             if (func_name == "cudaMemcpyToSymbol") {
 
               // Create a constant for arg0_name
-              auto arg0_name_constant = llvm::ConstantDataArray::getString(context, arg0_name, /*AddNull=*/true);
-              auto arg0_name_ptr = new llvm::GlobalVariable(*M, arg0_name_constant->getType(), true, llvm::GlobalValue::ExternalLinkage, arg0_name_constant);
+              auto arg0_name_constant = llvm::ConstantDataArray::getString(
+                  context, arg0_name, /*AddNull=*/true);
+              auto arg0_name_ptr = new llvm::GlobalVariable(
+                  *M, arg0_name_constant->getType(), true,
+                  llvm::GlobalValue::ExternalLinkage, arg0_name_constant);
 
               std::vector<llvm::Type *> args;
               // i32 @cudaMemcpyToSymbol(i8* %1, i8* %2, i64 %3, i64 %4, i32 %5)
-              //LLVM 18
-              //args.push_back(llvm::Type::getInt8PtrTy(context));
-              //args.push_back(llvm::Type::getInt8PtrTy(context));
+              // LLVM 18
+              // args.push_back(llvm::Type::getInt8PtrTy(context));
+              // args.push_back(llvm::Type::getInt8PtrTy(context));
               args.push_back(PointerType::getUnqual(context));
               args.push_back(PointerType::getUnqual(context));
 
               args.push_back(llvm::Type::getInt64Ty(context));
               args.push_back(llvm::Type::getInt64Ty(context));
               args.push_back(llvm::Type::getInt32Ty(context));
-              args.push_back(arg0_name_ptr->getType()); 
-              //fix below based on arg0_ptr type
-  
+              args.push_back(arg0_name_ptr->getType());
+              // fix below based on arg0_ptr type
+
               llvm::FunctionType *func_Type =
                   FunctionType::get(I32, args, false);
 
@@ -423,24 +434,23 @@ void ReplaceMemcpyToSymbol(llvm::Module *M) {
 
               llvm::FunctionCallee _f =
                   M->getOrInsertFunction("cudaMemcpyToSymbol_host", func_Type);
-                  
+
               llvm::Function *func = llvm::cast<llvm::Function>(_f.getCallee());
               // construct argument(s)
               std::vector<Value *> func_args;
-              
+
               func_args.push_back(Call->getArgOperand(0));
               func_args.push_back(Call->getArgOperand(1));
               func_args.push_back(Call->getArgOperand(2));
               func_args.push_back(Call->getArgOperand(3));
               func_args.push_back(Call->getArgOperand(4));
               func_args.push_back(arg0_name_ptr);
-              
+
               auto c_inst = llvm::CallInst::Create(func, func_args, "", Call);
 
               // insert
               Call->replaceAllUsesWith(c_inst);
               need_remove.push_back(Call);
-              
             }
           }
         }

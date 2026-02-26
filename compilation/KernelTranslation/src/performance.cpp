@@ -3,8 +3,8 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
 
-//LLVM 18
-//#include "llvm/TargetParser/Triple.h"
+// LLVM 18
+// #include "llvm/TargetParser/Triple.h"
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopPass.h"
@@ -28,21 +28,21 @@
 #include "llvm/PassInfo.h"
 #include "llvm/PassRegistry.h"
 #include "llvm/Support/CommandLine.h"
-//LLVM 18
-//#include "llvm/Support/Host.h"
-#include "llvm/TargetParser/Host.h"
+// LLVM 18
+// #include "llvm/Support/Host.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/IR/PassManager.h"
+#include "llvm/TargetParser/Host.h"
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 
-//LLVM 18
+// LLVM 18
 #include "llvm/Passes/PassBuilder.h"
-//#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+// #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
@@ -51,7 +51,6 @@
 #include <sstream>
 #include <tuple>
 #include <vector>
-
 
 using namespace llvm;
 
@@ -110,21 +109,23 @@ void eliminate_redudant_threadIdx_computation(llvm::Module *M) {
   }
 }
 
-struct PreserveDivergenceMetadataPass : public llvm::PassInfoMixin<PreserveDivergenceMetadataPass> {
-    llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &) {
-        for (auto &F : M) {
-            for (auto &BB : F) {
-                for (auto &I : BB) {
-                    if (I.hasMetadata("divergence")) {
-                        llvm::errs() << "Preserving metadata for instruction: " << I << "\n";
-                        // 복사 로직 추가 (필요시)
-                        I.setMetadata("divergence", I.getMetadata("divergence"));
-                    }
-                }
-            }
+struct PreserveDivergenceMetadataPass
+    : public llvm::PassInfoMixin<PreserveDivergenceMetadataPass> {
+  llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &) {
+    for (auto &F : M) {
+      for (auto &BB : F) {
+        for (auto &I : BB) {
+          if (I.hasMetadata("divergence")) {
+            llvm::errs() << "Preserving metadata for instruction: " << I
+                         << "\n";
+            // 복사 로직 추가 (필요시)
+            I.setMetadata("divergence", I.getMetadata("divergence"));
+          }
         }
-        return llvm::PreservedAnalyses::all();
+      }
     }
+    return llvm::PreservedAnalyses::all();
+  }
 };
 
 void performance_optimization(llvm::Module *M) {
@@ -155,15 +156,16 @@ void performance_optimization(llvm::Module *M) {
   PassBuilder.crossRegisterProxies(LAM, FAM, CGAM, MAM);
   printf("registering analysis done\n");
 
-  llvm::ModulePassManager MPM = llvm::ModulePassManager();;
+  llvm::ModulePassManager MPM = llvm::ModulePassManager();
+  ;
   llvm::OptimizationLevel OptLevel = llvm::OptimizationLevel::O3;
 
   MPM.addPass(PassBuilder.buildPerModuleDefaultPipeline(OptLevel));
-  //MPM.addPass(PreserveDivergenceMetadataPass());
-  
+  // MPM.addPass(PreserveDivergenceMetadataPass());
 
   /*
-  llvm::ModulePassManager TempMPM = PassBuilder.buildPerModuleDefaultPipeline(OptLevel);
+  llvm::ModulePassManager TempMPM =
+  PassBuilder.buildPerModuleDefaultPipeline(OptLevel);
     // ControlFlowSimplificationPass를 제외한 패스 추가
     for (auto &Pass : TempMPM) {
         if (!Pass->name().contains("ControlFlowSimplificationPass")) {
@@ -172,14 +174,12 @@ void performance_optimization(llvm::Module *M) {
     }
   */
 
-
   printf("running analysis\n");
-  //print the entire IR
+  // print the entire IR
   M->print(llvm::errs(), nullptr);
   MPM.run(*M, MAM);
   printf("analysis done\n");
 }
-
 
 // Legacy Optimization before LLVM 18
 /*

@@ -24,8 +24,8 @@ using namespace llvm;
 void ReplaceKernelArg(llvm::Module *M) {
   LLVMContext &context = M->getContext();
   auto VoidTy = llvm::Type::getVoidTy(context);
-  //LLVM 18
-  //auto I8 = llvm::Type::getInt8PtrTy(context);
+  // LLVM 18
+  // auto I8 = llvm::Type::getInt8PtrTy(context);
   std::map<std::string, Function *> kernels;
 
   std::set<llvm::Function *> need_replace;
@@ -50,12 +50,12 @@ void ReplaceKernelArg(llvm::Module *M) {
 
   // find/create C's malloc function
   std::vector<llvm::Type *> args;
-  //LLVM 18 
+  // LLVM 18
   args.push_back(PointerType::getUnqual(context));
-  //args.push_back(llvm::Type::getInt8PtrTy(context));
+  // args.push_back(llvm::Type::getInt8PtrTy(context));
   llvm::FunctionType *mallocFuncType =
       FunctionType::get(PointerType::getUnqual(context),
-      //FunctionType::get(llvm::Type::getInt8PtrTy(context),
+                        // FunctionType::get(llvm::Type::getInt8PtrTy(context),
                         {llvm::Type::getInt64Ty(context)}, false);
 
   llvm::FunctionCallee _f = M->getOrInsertFunction("malloc", mallocFuncType);

@@ -7,16 +7,16 @@
 #include "performance.h"
 #include "tool.h"
 #include "warp_func.h"
+#include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Support/raw_ostream.h"
 #include <assert.h>
 #include <fstream>
 #include <iostream>
-#include "llvm/Analysis/CGSCCPassManager.h"
-#include "llvm/Analysis/LoopAnalysisManager.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/PassManager.h"
-#include "llvm/Support/raw_ostream.h"
 #include <stdlib.h>
 
 using namespace llvm;
@@ -24,7 +24,7 @@ using namespace cupbop;
 
 std::string PATH = "kernel_meta.log";
 
-static void dumpFile(llvm::Module * program, std::string name) {
+static void dumpFile(llvm::Module *program, std::string name) {
   std::error_code EC;
   raw_fd_ostream OutFile(name, EC);
   program->print(OutFile, nullptr);
@@ -66,49 +66,47 @@ int main(int argc, char **argv) {
   VerifyModule(program);
   insert_sync(program);
 
-  //dumpFile(program, "3.ll");
+  // dumpFile(program, "3.ll");
 
   // split block by sync
   VerifyModule(program);
 
-
   std::cout << "split\n" << std::flush;
-  //print the proogram
-  //printIR(program);
+  // print the proogram
+  // printIR(program);
   split_block_by_sync(program);
   // add loop for intra&intera thread
 
-
-  //dumpFile(program, "4.ll");
+  // dumpFile(program, "4.ll");
 
   // VerifyModule(program);
   std::cout << "insert_warp_loop\n" << std::flush;
   printIR(program);
   insert_warp_loop(program);
 
-  //dumpFile(program, "5.ll");
+  // dumpFile(program, "5.ll");
 
   VerifyModule(program);
 
   // (TODO): replace this patch
   std::cout << "replace\n" << std::flush;
-  //printIR(program);
+  // printIR(program);
   replace_built_in_function(program);
 
-  //dumpFile(program, "6.ll");
+  // dumpFile(program, "6.ll");
   VerifyModule(program);
   std::cout << "generate\n" << std::flush;
-  //printIR(program);
+  // printIR(program);
   generate_wrapper(program);
-  //dumpFile(program, "7.ll");
-  // VerifyModule(program);
+  // dumpFile(program, "7.ll");
+  //  VerifyModule(program);
   std::cout << "performance opt\n" << std::flush;
-  //printIR(program);
-  // performance optimization
+  // printIR(program);
+  //  performance optimization
   performance_optimization(program);
-  //dumpFile(program, "8.ll");
+  // dumpFile(program, "8.ll");
   std::cout << "verify\n" << std::flush;
-  //printIR(program);
+  // printIR(program);
   VerifyModule(program);
 
   std::cout << "dump\n" << std::flush;

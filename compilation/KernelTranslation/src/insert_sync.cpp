@@ -1,8 +1,8 @@
 #include "insert_sync.h"
 #include "assert.h"
+#include "cg_sync.h"
 #include "handle_sync.h"
 #include "tool.h"
-#include "cg_sync.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -22,8 +22,8 @@
 #include "llvm/PassInfo.h"
 #include "llvm/PassRegistry.h"
 #include "llvm/Support/CommandLine.h"
-//LLVM 18
-//#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+// LLVM 18
+// #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
@@ -56,47 +56,46 @@ public:
     //   //if (!isa<AllocaInst>(i)) {
     //   if (!isa<AllocaInst>(i) && !isa<LoadInst>(i) && !isa<CastInst>(i)) {
     //     //print the instruction before inserting the barrier
-    //     printf("inserting intra warp barrier before instruction: AllocInst\n");
-    //     i->print(llvm::errs());
+    //     printf("inserting intra warp barrier before instruction:
+    //     AllocInst\n"); i->print(llvm::errs());
     //     insert_inter_warp_sync_before.push_back(&(*(i)));
     //     break;
     //   }
     // }
-    
+
     auto iter = entry->begin();
     while (iter != entry->end()) {
-        Instruction* I = &*iter;
+      Instruction *I = &*iter;
 
-        // 기존 예외: AllocaInst, LoadInst, CastInst
-        if (isa<AllocaInst>(I) || isa<LoadInst>(I) || isa<CastInst>(I)) {
-            ++iter;
+      // 기존 예외: AllocaInst, LoadInst, CastInst
+      if (isa<AllocaInst>(I) || isa<LoadInst>(I) || isa<CastInst>(I)) {
+        ++iter;
+        continue;
+      }
+
+      // vx_local_alloc + gep + addrspacecast + store 시퀀스 예외
+      if (auto call = dyn_cast<CallInst>(I)) {
+        Function *callee = call->getCalledFunction();
+        if (callee && callee->getName().contains("vx_local_alloc")) {
+          // 뒤에 gep, addrspacecast, store 있는지 체크
+          auto next1 = std::next(iter);
+          auto next2 = std::next(next1);
+          auto next3 = std::next(next2);
+          if (next1 != entry->end() && next2 != entry->end() &&
+              next3 != entry->end() && isa<GetElementPtrInst>(&*next1) &&
+              isa<AddrSpaceCastInst>(&*next2) && isa<StoreInst>(&*next3)) {
+            // 네 개 다 barrier 앞 예외로 인정 (store까지 스킵)
+            iter = ++next3; // store까지 skip
             continue;
+          }
         }
+      }
 
-        // vx_local_alloc + gep + addrspacecast + store 시퀀스 예외
-        if (auto call = dyn_cast<CallInst>(I)) {
-            Function *callee = call->getCalledFunction();
-            if (callee && callee->getName().contains("vx_local_alloc")) {
-                // 뒤에 gep, addrspacecast, store 있는지 체크
-                auto next1 = std::next(iter);
-                auto next2 = std::next(next1);
-                auto next3 = std::next(next2);
-                if (next1 != entry->end() && next2 != entry->end() && next3 != entry->end() &&
-                    isa<GetElementPtrInst>(&*next1) &&
-                    isa<AddrSpaceCastInst>(&*next2) &&
-                    isa<StoreInst>(&*next3)) {
-                    // 네 개 다 barrier 앞 예외로 인정 (store까지 스킵)
-                    iter = ++next3; // store까지 skip
-                    continue;
-                }
-            }
-        }
-
-        // 위 예외에 걸리지 않으면, 여기에 barrier 삽입
-        printf("inserting intra warp barrier before instruction:\n");
-        I->print(llvm::errs());
-        insert_inter_warp_sync_before.push_back(I);
-        break;
+      // 위 예외에 걸리지 않으면, 여기에 barrier 삽입
+      printf("inserting intra warp barrier before instruction:\n");
+      I->print(llvm::errs());
+      insert_inter_warp_sync_before.push_back(I);
+      break;
     }
 
     for (Function::iterator I = F.begin(); I != F.end(); ++I) {
@@ -106,7 +105,8 @@ public:
       for (; BI != I->end(); BI++) {
         llvm::ReturnInst *Ret = llvm::dyn_cast<llvm::ReturnInst>(&(*BI));
         if (Ret) {
-          printf("inserting intra warp barrier before instruction: ReturnInst\n");
+          printf(
+              "inserting intra warp barrier before instruction: ReturnInst\n");
           Ret->print(llvm::errs());
           insert_inter_warp_sync_before.push_back(&(*BI));
         }
@@ -183,7 +183,9 @@ public:
       // Unconditional barrier postdominates the entry node.
       if (PDT->getPostDomTree().dominates(b, &F.getEntryBlock()))
         continue;
-      printf("insert barrier at the beginning of block(conditional barrier): %s\n", b->getName().str().c_str());
+      printf(
+          "insert barrier at the beginning of block(conditional barrier): %s\n",
+          b->getName().str().c_str());
       // print block
       b->print(llvm::errs());
       conditionalBarriers.push_back(b);
@@ -220,7 +222,6 @@ public:
       pred->print(llvm::errs());
       printf("b: %s\n", b->getName().str().c_str());
       b->print(llvm::errs());
-
 
       // we should create warp/block barrier based on the conditional barrier
       if (has_warp_barrier(b)) {
@@ -288,13 +289,13 @@ public:
             break;
           }
         }
-        if (!post_dominate_all)
-        {
+        if (!post_dominate_all) {
           conditionalBarriers.push_back(pred);
-          printf("insert barrier at the beginning of block(conditional barrier pred): %s\n", pred->getName().str().c_str());
+          printf("insert barrier at the beginning of block(conditional barrier "
+                 "pred): %s\n",
+                 pred->getName().str().c_str());
           // print block
           pred->print(llvm::errs());
-
         }
       }
 
@@ -471,15 +472,14 @@ public:
           if (Call->isInlineAsm())
             continue;
           auto func_name = Call->getCalledOperand()->getName().str();
-          if (func_name == "llvm.nvvm.barrier0" ||
-              isWarpSync(func_name) ||
+          if (func_name == "llvm.nvvm.barrier0" || isWarpSync(func_name) ||
               func_name == "llvm.nvvm.barrier.sync") {
-                printf("found barrier inst new!\n");
-                // print the whole block
-                (*i)->print(errs());
-                // print the whole function
-                printf("-----------------\n");
-                L->getHeader()->getParent()->print(errs());
+            printf("found barrier inst new!\n");
+            // print the whole block
+            (*i)->print(errs());
+            // print the whole function
+            printf("-----------------\n");
+            L->getHeader()->getParent()->print(errs());
             is_conditional_loop = true;
             if (isWarpSync(func_name)) {
               is_warp = 1;

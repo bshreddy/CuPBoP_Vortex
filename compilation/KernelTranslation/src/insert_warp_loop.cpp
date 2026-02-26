@@ -57,9 +57,9 @@ using namespace llvm;
 // LLVM-19 does not provide divergence analysis for NVPTX backend.
 // Thus, we need to implement our own divergence analysis.
 class CustomDivergenceAnalysis {
-    DominatorTree *DT;
-    PostDominatorTree *PDT;
-    LoopInfo *LI;
+  DominatorTree *DT;
+  PostDominatorTree *PDT;
+  LoopInfo *LI;
 
 public:
   std::unordered_set<const Value *> DivergentValues;
@@ -67,10 +67,10 @@ public:
 
   void setAnalyzers(DominatorTree &DomTree, PostDominatorTree &PostDomTree,
                     LoopInfo &LoopInf) {
-        DT = &DomTree;
-        PDT = &PostDomTree;
-        LI = &LoopInf;
-    }
+    DT = &DomTree;
+    PDT = &PostDomTree;
+    LI = &LoopInf;
+  }
 
   void analyze(Function &F) {
 
@@ -83,7 +83,7 @@ public:
 
       if (isDivergenceSource(&I)) {
         DivergentValues.insert(&I);
-        
+
         Worklist.push(&I);
         llvm::errs() << "Divergence source\n";
         // print instruction
@@ -104,7 +104,7 @@ public:
         const Instruction *storeLocation =
             dyn_cast<Instruction>(storeInst->getOperand(1));
         if (storeLocation && DivergentValues.insert(storeLocation).second) {
-          
+
           llvm::errs() << "new divergence source 1\n";
           // print storeLocation
           storeLocation->print(llvm::errs());
@@ -114,25 +114,25 @@ public:
         }
       }
       // if it's a conditional branch
-      
+
       else if (auto cond_branch = dyn_cast<BranchInst>(Inst)) {
         if (cond_branch->isConditional()) {
           // get context and put metadata for inserting vx_split
           // Mark's working on this
-          
+
           /*
 
           */
           llvm::errs() << "Processing conditional branch\n";
           assert(DT && "DominatorTree is not initialized!");
           assert(cond_branch && "cond_branch is null!");
-          
+
           Value *Cond = cond_branch->getCondition();
           // tid 와 관련된 variable 로 branch 가 진행
           if (DivergentValues.count(Cond) > 0) {
             llvm::errs() << "new divergence check 1\n";
             for (auto *SuccBB : successors(cond_branch->getParent())) {
-            assert(SuccBB && "Successor basic block is null!");
+              assert(SuccBB && "Successor basic block is null!");
               llvm::errs() << "new divergence check 2\n";
               // print successor block
               SuccBB->print(llvm::errs());
@@ -144,44 +144,44 @@ public:
                 for (const Instruction &I : *SuccBB) {
                   llvm::errs() << "new divergence check 4\n";
                   // if (DivergentValues.insert(&I).second) {
-                    Worklist.push(&I);
+                  Worklist.push(&I);
                   //}
                 }
               }
             }
           }
         }
-          /*
-          // Iterate through the successors of the branch instruction
-          for (unsigned i = 0; i < cond_branch->getNumSuccessors(); ++i) {
-            const BasicBlock *successor = cond_branch->getSuccessor(i);
+        /*
+        // Iterate through the successors of the branch instruction
+        for (unsigned i = 0; i < cond_branch->getNumSuccessors(); ++i) {
+          const BasicBlock *successor = cond_branch->getSuccessor(i);
 
-            llvm::errs() << "Processing successor block:\n";
-            successor->print(llvm::errs());
+          llvm::errs() << "Processing successor block:\n";
+          successor->print(llvm::errs());
 
-            // Add all instructions in the successor block to the worklist
-            for (const Instruction &succInst : *successor) {
-              if (dyn_cast<Instruction>(&succInst)) {
-              llvm::errs() << "Adding new instruction to worklist from
-        successor\n"; succInst.print(llvm::errs()); Worklist.push(&succInst);
-              }
+          // Add all instructions in the successor block to the worklist
+          for (const Instruction &succInst : *successor) {
+            if (dyn_cast<Instruction>(&succInst)) {
+            llvm::errs() << "Adding new instruction to worklist from
+      successor\n"; succInst.print(llvm::errs()); Worklist.push(&succInst);
             }
           }
-          */
+        }
+        */
 
         else {
           goto not_st_not_br;
         }
       }
-      
-       else {
-        not_st_not_br:
+
+      else {
+      not_st_not_br:
         for (const Use &U : Inst->uses()) {
           const Instruction *UserInst = dyn_cast<Instruction>(U.getUser());
           if (UserInst && DivergentValues.insert(UserInst).second) {
             llvm::errs() << "new divergence source 2\n";
-          // print storeLocation
-          UserInst->print(llvm::errs());
+            // print storeLocation
+            UserInst->print(llvm::errs());
             Worklist.push(UserInst);
             llvm::errs() << "this \n";
           }
@@ -205,7 +205,7 @@ private:
             // F->getName() == "llvm.nvvm.read.ptx.sreg.ctaid.x" ||
             // F->getName() == "llvm.nvvm.read.ptx.sreg.ctaid.y" ||
             // F->getName() == "llvm.nvvm.read.ptx.sreg.ctaid.z"
-            ) {
+        ) {
           return true;
         }
       }
@@ -261,7 +261,7 @@ bool ShouldNotBeContextSaved(llvm::Instruction *instr,
   // is same among all threads within a wrap
   // LLVM 18
   return !DI.isDivergent(instr);
-  //return false;
+  // return false;
 }
 
 // generate countpart alloc in the beginning of the Function
@@ -386,7 +386,7 @@ llvm::Instruction *AddContextSave(llvm::Instruction *instruction,
   auto thread_idx = builder.CreateBinOp(
       Instruction::Add, intra_warp_index,
       builder.CreateBinOp(Instruction::Mul, inter_warp_index,
-                          ConstantInt::get(I32, SW_WARP_SIZE)), 
+                          ConstantInt::get(I32, SW_WARP_SIZE)),
       "thread_idx");
   gepArgs.push_back(thread_idx);
 
@@ -414,9 +414,9 @@ llvm::Instruction *AddContextRestore(llvm::Value *val,
   auto M = before->getParent()->getParent()->getParent();
   auto I32 = llvm::Type::getInt32Ty(M->getContext());
   auto inter_warp_index =
-        createLoad(builder, M->getGlobalVariable("inter_warp_index"));
+      createLoad(builder, M->getGlobalVariable("inter_warp_index"));
   auto intra_warp_index =
-        createLoad(builder, M->getGlobalVariable("intra_warp_index"));
+      createLoad(builder, M->getGlobalVariable("intra_warp_index"));
   auto thread_idx = builder.CreateBinOp(
       Instruction::Add, intra_warp_index,
       builder.CreateBinOp(Instruction::Mul, inter_warp_index,
@@ -437,34 +437,34 @@ llvm::Instruction *AddContextRestore(llvm::Value *val,
     return gep;
   }
 
-// Mark's fix (Dec 24, 2024)
-// Check if `before` is a LoadInst
-// print before
-llvm::errs() << "AddcontextRestore: before\n";
-before->print(llvm::errs());
-llvm::errs() << "\n";
-if (auto *loadInst = dyn_cast<LoadInst>(before)) {
+  // Mark's fix (Dec 24, 2024)
+  // Check if `before` is a LoadInst
+  // print before
+  llvm::errs() << "AddcontextRestore: before\n";
+  before->print(llvm::errs());
+  llvm::errs() << "\n";
+  if (auto *loadInst = dyn_cast<LoadInst>(before)) {
     // print loadInst
     llvm::errs() << "AddcontextRestore: loadInst\n";
     loadInst->print(llvm::errs());
     llvm::errs() << "\n";
     // Check if the LoadInst has "divergence" metadata
     if (auto *MD = loadInst->getMetadata("divergence")) {
-        // Create the new load with the metadata
-        llvm::Instruction *newLoad = createLoad(builder, gep);
-        newLoad->setMetadata("divergence", MD); // Attach the metadata
-        return newLoad;
+      // Create the new load with the metadata
+      llvm::Instruction *newLoad = createLoad(builder, gep);
+      newLoad->setMetadata("divergence", MD); // Attach the metadata
+      return newLoad;
     }
-}
+  }
 
-// If `before` is not a LoadInst or has no "divergence" metadata
+  // If `before` is not a LoadInst or has no "divergence" metadata
   return createLoad(builder, gep);
 }
 
 void AddContextSaveRestore(llvm::Instruction *instruction,
                            bool intra_warp_loop) {
-  
-                            // print instruction
+
+  // print instruction
   llvm::errs() << "addcontextsaverestore\n";
   instruction->print(llvm::errs());
 
@@ -523,7 +523,7 @@ void handle_alloc(llvm::Function *F) {
     // if (dyn_cast<AllocaInst>(inst)->getType()->getElementType()) {
     //   elementType = dyn_cast<AllocaInst>(inst)->getType()->getElementType();
     // }
-        if (dyn_cast<AllocaInst>(inst)) {
+    if (dyn_cast<AllocaInst>(inst)) {
       elementType = dyn_cast<AllocaInst>(inst)->getAllocatedType();
     }
 
@@ -573,7 +573,7 @@ void handle_local_variable_intra_warp(std::vector<ParallelRegion> &PRs,
     std::vector<llvm::Instruction *> instruction_to_fix;
     // std::vector<llvm::AllocaInst *> instruction_to_move;-> vx_printf doesn't
     // work with this
-    
+
     // llvm::LLVMContext &context = F->getParent()->getContext();
     for (auto bb = F->begin(); bb != F->end(); bb++) {
       for (auto ii = bb->begin(); ii != bb->end(); ii++) {
@@ -590,11 +590,11 @@ void handle_local_variable_intra_warp(std::vector<ParallelRegion> &PRs,
             llvm::errs() << "ui->getUser() : ";
             ui->getUser()->print(llvm::errs());
             llvm::errs() << "\n";
-            // before fix 
-            llvm::Instruction *user = dyn_cast<Instruction>(ui->getUser());          
-            if (isa<StoreInst>(user)) {  
+            // before fix
+            llvm::Instruction *user = dyn_cast<Instruction>(ui->getUser());
+            if (isa<StoreInst>(user)) {
 
-            // Mark's fix (wrong)
+              // Mark's fix (wrong)
               // llvm::User *user_cast = ui->getUser();
               // if (auto *user = dyn_cast<Instruction>(user_cast)){
 
@@ -605,7 +605,7 @@ void handle_local_variable_intra_warp(std::vector<ParallelRegion> &PRs,
                 allStoreNonDivergence = false;
                 break;
               }
-                          } else if (!isa<LoadInst>(user)) {
+            } else if (!isa<LoadInst>(user)) {
               allStoreNonDivergence = false;
               break;
             }
@@ -615,14 +615,14 @@ void handle_local_variable_intra_warp(std::vector<ParallelRegion> &PRs,
             printf("alloc name: %s\n", alloc->getName().str().c_str());
             // print all users
             for (Instruction::use_iterator ui = alloc->use_begin(),
-                                             ue = alloc->use_end();
-                                              ui != ue; ++ui) {
-                llvm::User *user = ui->getUser(); // Use의 사용자 객체
-                if (auto *inst = dyn_cast<Instruction>(user)) {
-                    inst->print(llvm::errs()); // 모든 Instruction 출력
-                } else {
-                    llvm::errs() << "Non-instruction use found!\n";
-                }
+                                           ue = alloc->use_end();
+                 ui != ue; ++ui) {
+              llvm::User *user = ui->getUser(); // Use의 사용자 객체
+              if (auto *inst = dyn_cast<Instruction>(user)) {
+                inst->print(llvm::errs()); // 모든 Instruction 출력
+              } else {
+                llvm::errs() << "Non-instruction use found!\n";
+              }
             }
             // instruction_to_move.push_back(alloc);-> vx_printf doesn't work
             // with this
@@ -660,152 +660,152 @@ void handle_local_variable_intra_warp(std::vector<ParallelRegion> &PRs,
             std::vector<const Instruction *> Visited_curr_vec;
 
             for (const Use &U : alloc->uses()) {
-                const Instruction *User = dyn_cast<Instruction>(U.getUser());
-                if (User) {
-                    Worklist_prev.push(alloc);
-                    Worklist_curr.push(User);
-                }
+              const Instruction *User = dyn_cast<Instruction>(U.getUser());
+              if (User) {
+                Worklist_prev.push(alloc);
+                Worklist_curr.push(User);
+              }
             }
 
             // Worklist.push(alloc); // Start with the user of the instruction
-           
+
             while (!Worklist_prev.empty()) {
-                
-                const Instruction *Prev = Worklist_prev.front();
-                const Instruction *Current = Worklist_curr.front();
+
+              const Instruction *Prev = Worklist_prev.front();
+              const Instruction *Current = Worklist_curr.front();
 
               // const Instruction *Current = Worklist.front();
-                
-                Worklist_prev.pop();
-                Worklist_curr.pop();
 
-                llvm::errs() << "\nworklist working: Current instruction:\n";
-                Current->print(llvm::errs());
+              Worklist_prev.pop();
+              Worklist_curr.pop();
 
-                // Skip already visited instructions
-                if (Visited_curr.count(Current) && Visited_prev.count(Prev)) {
+              llvm::errs() << "\nworklist working: Current instruction:\n";
+              Current->print(llvm::errs());
+
+              // Skip already visited instructions
+              if (Visited_curr.count(Current) && Visited_prev.count(Prev)) {
                 continue;
               }
-                Visited_prev.insert(Prev);
-                Visited_curr.insert(Current);
-                Visited_prev_vec.push_back(Prev);
-                Visited_curr_vec.push_back(Current);
+              Visited_prev.insert(Prev);
+              Visited_curr.insert(Current);
+              Visited_prev_vec.push_back(Prev);
+              Visited_curr_vec.push_back(Current);
 
-                // If the current instruction is a conditional branch, log it
-                if (const BranchInst *branch = dyn_cast<BranchInst>(Current)) {
+              // If the current instruction is a conditional branch, log it
+              if (const BranchInst *branch = dyn_cast<BranchInst>(Current)) {
                 if (branch->isConditional() &&
                     Prev->getParent() == Current->getParent()) {
                   llvm::errs() << "\nInstruction eventually leads to a "
                                   "conditional branch:\n";
-                        branch->print(llvm::errs());
-                        llvm::errs() << "\n";
-                                  
-                        LLVMContext &context = F->getContext();
+                  branch->print(llvm::errs());
+                  llvm::errs() << "\n";
+
+                  LLVMContext &context = F->getContext();
                   MDNode *N = MDNode::get(
                       context, MDString::get(context, "non-uniform"));
-                        // Remove const qualifier
-                        
-                        // Set metadata
+                  // Remove const qualifier
 
-                        // Backtrack to find the LoadInst
-                        llvm::errs() << "\nBacktracking to find LoadInst:\n";
-                        const Instruction *BacktrackInst = Prev;
-                        while (BacktrackInst) {
-                            llvm::errs() << "Checking instruction:\n";
-                            BacktrackInst->print(llvm::errs());
-                            llvm::errs() << "\n";
+                  // Set metadata
+
+                  // Backtrack to find the LoadInst
+                  llvm::errs() << "\nBacktracking to find LoadInst:\n";
+                  const Instruction *BacktrackInst = Prev;
+                  while (BacktrackInst) {
+                    llvm::errs() << "Checking instruction:\n";
+                    BacktrackInst->print(llvm::errs());
+                    llvm::errs() << "\n";
 
                     if (const LoadInst *loadInst =
                             dyn_cast<LoadInst>(BacktrackInst)) {
-                              // check branch and loadInst are in the same block
-                              if (loadInst->getParent() == branch->getParent()) {
-                                llvm::errs() << "Found LoadInst:\n";
-                                loadInst->print(llvm::errs());
-                                llvm::errs() << "\n";
+                      // check branch and loadInst are in the same block
+                      if (loadInst->getParent() == branch->getParent()) {
+                        llvm::errs() << "Found LoadInst:\n";
+                        loadInst->print(llvm::errs());
+                        llvm::errs() << "\n";
                         auto non_const_inst =
                             const_cast<Instruction *>(BacktrackInst);
-                                non_const_inst->setMetadata("divergence", N);
-                              }
-                                break; // Stop backtracking once the LoadInst is found
-                            }
+                        non_const_inst->setMetadata("divergence", N);
+                      }
+                      break; // Stop backtracking once the LoadInst is found
+                    }
 
-                          // Find the index of BacktrackInst in Visited_curr
+                    // Find the index of BacktrackInst in Visited_curr
                     auto it = std::find(Visited_curr_vec.begin(),
                                         Visited_curr_vec.end(), BacktrackInst);
-                          if (it == Visited_curr_vec.end()) {
+                    if (it == Visited_curr_vec.end()) {
                       llvm::errs() << "Instruction not found in visited list. "
                                       "Backtracking ends.\n";
-                              break;
-                          }
+                      break;
+                    }
 
                     // Get the corresponding index and update BacktrackInst
                     // using Visited_prev
-                          size_t index = std::distance(Visited_curr_vec.begin(), it);
-                          BacktrackInst = Visited_prev_vec[index];
+                    size_t index = std::distance(Visited_curr_vec.begin(), it);
+                    BacktrackInst = Visited_prev_vec[index];
+                  }
+                }
+              }
+              /*
+            // also covers the case where there's a switch instruction
+          else if (const SwitchInst *switchInst =
+          dyn_cast<SwitchInst>(Current)) { printf("SwitchInst\n"); if
+          (Prev->getParent() == Current->getParent()) { llvm::errs() <<
+          "\nInstruction eventually leads to a switch statement:\n";
+                    switchInst->print(llvm::errs());
+                    llvm::errs() << "\n";
+
+                    LLVMContext &context = F->getContext();
+                  MDNode* N = MDNode::get(context, MDString::get(context,
+          "non-uniform"));
+
+                  // Backtracking to find LoadInst (similar logic for
+          SwitchInst) llvm::errs() << "\nBacktracking to find LoadInst:\n";
+                    const Instruction *BacktrackInst = Prev;
+                    while (BacktrackInst) {
+                        llvm::errs() << "Checking instruction:\n";
+                        BacktrackInst->print(llvm::errs());
+                        llvm::errs() << "\n";
+
+                      if (const LoadInst *loadInst =
+          dyn_cast<LoadInst>(BacktrackInst)) { if (loadInst->getParent() ==
+          switchInst->getParent()) { llvm::errs() << "Found LoadInst:\n";
+                                loadInst->print(llvm::errs());
+                                llvm::errs() << "\n";
+                              auto non_const_inst = const_cast<Instruction
+          *>(BacktrackInst); non_const_inst->setMetadata("divergence", N);
+                            }
+                          break; // Stop backtracking once the LoadInst is
+          found
                         }
+
+                        // Backtracking logic
+                      auto it = std::find(Visited_curr_vec.begin(),
+          Visited_curr_vec.end(), BacktrackInst); if (it ==
+          Visited_curr_vec.end()) { llvm::errs() << "Instruction not found in
+          visited list. Backtracking ends.\n"; break;
+                        }
+
+                      size_t index = std::distance(Visited_curr_vec.begin(),
+          it); BacktrackInst = Visited_prev_vec[index];
                     }
                 }
-                /*
-              // also covers the case where there's a switch instruction
-            else if (const SwitchInst *switchInst =
-            dyn_cast<SwitchInst>(Current)) { printf("SwitchInst\n"); if
-            (Prev->getParent() == Current->getParent()) { llvm::errs() <<
-            "\nInstruction eventually leads to a switch statement:\n";
-                      switchInst->print(llvm::errs());
-                      llvm::errs() << "\n";
-                      
-                      LLVMContext &context = F->getContext();
-                    MDNode* N = MDNode::get(context, MDString::get(context,
-            "non-uniform"));
-                      
-                    // Backtracking to find LoadInst (similar logic for
-            SwitchInst) llvm::errs() << "\nBacktracking to find LoadInst:\n";
-                      const Instruction *BacktrackInst = Prev;
-                      while (BacktrackInst) {
-                          llvm::errs() << "Checking instruction:\n";
-                          BacktrackInst->print(llvm::errs());
-                          llvm::errs() << "\n";
-
-                        if (const LoadInst *loadInst =
-            dyn_cast<LoadInst>(BacktrackInst)) { if (loadInst->getParent() ==
-            switchInst->getParent()) { llvm::errs() << "Found LoadInst:\n";
-                                  loadInst->print(llvm::errs());
-                                  llvm::errs() << "\n";
-                                auto non_const_inst = const_cast<Instruction
-            *>(BacktrackInst); non_const_inst->setMetadata("divergence", N);
-                              }
-                            break; // Stop backtracking once the LoadInst is
-            found
-                          }
-
-                          // Backtracking logic
-                        auto it = std::find(Visited_curr_vec.begin(),
-            Visited_curr_vec.end(), BacktrackInst); if (it ==
-            Visited_curr_vec.end()) { llvm::errs() << "Instruction not found in
-            visited list. Backtracking ends.\n"; break;
-                          }
-
-                        size_t index = std::distance(Visited_curr_vec.begin(),
-            it); BacktrackInst = Visited_prev_vec[index];
-                      }
-                  }
-              }
-                */
-                // Add al l users of the current instruction to the worklist
-                for (const Use &U : Current->uses()) {
+            }
+              */
+              // Add al l users of the current instruction to the worklist
+              for (const Use &U : Current->uses()) {
                 const Instruction *NextUser =
                     dyn_cast<Instruction>(U.getUser());
                 if (NextUser && !Visited_prev.count(Current) &&
                     !Visited_curr.count(NextUser)) {
-                        Worklist_prev.push(Current);
-                        Worklist_curr.push(NextUser);
-                        llvm::errs() << "\nNext user of the instruction:\n";
-                        NextUser->print(llvm::errs());
-                    }
+                  Worklist_prev.push(Current);
+                  Worklist_curr.push(NextUser);
+                  llvm::errs() << "\nNext user of the instruction:\n";
+                  NextUser->print(llvm::errs());
                 }
+              }
             }
           }
-    
+
           // LLVM 18 (temporaily disabled)-> vx_printf doesn't work with this
           /*
           // Do not duplicate var used only by a single PR
@@ -885,14 +885,14 @@ void handle_local_variable_intra_warp(std::vector<ParallelRegion> &PRs,
   }
 }
 
-// Schedule 1, 
+// Schedule 1,
 // 1. !nested loop
 //    for (int i = hw_tid + hw_wid * hw_nt; i < sw_block_size; i += hw_nt *
 //    hw_nw)
 //      id = i;
 //      doWork()
 // 2. nested loop
-//    sw_warp_size = 32 // TODO : change to the CUDA function 
+//    sw_warp_size = 32 // TODO : change to the CUDA function
 //    for (int i = hw_wid; i < (sw_block_size + sw_warp_size -1) / sw_warp_size;
 //    i += hw_nw)
 //        for(int j = tid; j < sw_warp_size; j += hw_nt)
@@ -912,10 +912,8 @@ struct ScheduleInfo {
 };
 ScheduleInfo sche_data;
 
-
-void add_mapping_variable(llvm::Function* F, bool intra_warp_loop, 
-      bool need_nested_loop, int schedule_flag)
-{
+void add_mapping_variable(llvm::Function *F, bool intra_warp_loop,
+                          bool need_nested_loop, int schedule_flag) {
   // Define perform once in the outermost loop
   if (need_nested_loop && intra_warp_loop)
     return;
@@ -933,16 +931,16 @@ void add_mapping_variable(llvm::Function* F, bool intra_warp_loop,
   auto sw_warp_size = builder.getInt32(SW_WARP_SIZE);
 
   if (schedule_flag == 1) {
-      // Get hardware information
-      FunctionCallee nHTC = M->getOrInsertFunction("vx_num_threads", nTTy);
-      FunctionCallee nHWC = M->getOrInsertFunction("vx_num_warps", nTTy);
-      FunctionCallee tidC = M->getOrInsertFunction("vx_thread_id", nTTy);
-      FunctionCallee widC = M->getOrInsertFunction("vx_warp_id", nTTy);
+    // Get hardware information
+    FunctionCallee nHTC = M->getOrInsertFunction("vx_num_threads", nTTy);
+    FunctionCallee nHWC = M->getOrInsertFunction("vx_num_warps", nTTy);
+    FunctionCallee tidC = M->getOrInsertFunction("vx_thread_id", nTTy);
+    FunctionCallee widC = M->getOrInsertFunction("vx_warp_id", nTTy);
 
-      auto tid = builder.CreateCall(tidC, {}, "hw_tid");
-      auto wid = builder.CreateCall(widC, {}, "hw_wid");
-      auto nHT = builder.CreateCall(nHTC, {}, "nHT");
-      auto nHW = builder.CreateCall(nHWC, {}, "nHW"); 
+    auto tid = builder.CreateCall(tidC, {}, "hw_tid");
+    auto wid = builder.CreateCall(widC, {}, "hw_wid");
+    auto nHT = builder.CreateCall(nHTC, {}, "nHT");
+    auto nHW = builder.CreateCall(nHWC, {}, "nHW");
 
     if (!need_nested_loop) {
       sche_data.inner_loop_init =
@@ -962,9 +960,9 @@ void add_mapping_variable(llvm::Function* F, bool intra_warp_loop,
           builder.CreateSub(builder.CreateAdd(sw_block_size, sw_warp_size),
                             builder.getInt32(1)),
           sw_warp_size, "warp_number");
-              printf("SCHEDULE DEBUG: nested loop!\n");
+      printf("SCHEDULE DEBUG: nested loop!\n");
     }
-  } else { // Schedule 0 
+  } else { // Schedule 0
     if (!need_nested_loop) {
       sche_data.inner_loop_init = builder.getInt32(0);
       sche_data.inner_loop_inc = builder.getInt32(1);
@@ -978,7 +976,7 @@ void add_mapping_variable(llvm::Function* F, bool intra_warp_loop,
       sche_data.outer_loop_inc = builder.getInt32(1);
       sche_data.outer_loop_cond =
           builder.CreateSDiv(sw_block_size, sw_warp_size, "warp_number");
-    } 
+    }
   }
 
   return;
@@ -1058,11 +1056,11 @@ BasicBlock *insert_loop_inc(llvm::BasicBlock *InsertIncBefore,
     builder.CreateStore(new_index, inter_warp_index);
   } else { // intra warp
     auto intra_warp_index = M->getGlobalVariable("intra_warp_index");
-      auto new_index = builder.CreateBinOp(
-          Instruction::Add, createLoad(builder, intra_warp_index),
-          sche_data.inner_loop_inc, "intra_warp_index_increment");
-      builder.CreateStore(new_index, intra_warp_index);
-  } 
+    auto new_index = builder.CreateBinOp(
+        Instruction::Add, createLoad(builder, intra_warp_index),
+        sche_data.inner_loop_inc, "intra_warp_index_increment");
+    builder.CreateStore(new_index, intra_warp_index);
+  }
 
   builder.CreateBr(InsertIncBefore);
   return loop_inc;
@@ -1162,7 +1160,7 @@ void print_parallel_region(std::vector<ParallelRegion> parallel_regions) {
 
 void remove_barrier(llvm::Function *F, bool intra_warp_loop,
                     int schedule_flag) {
-  
+
   std::vector<Instruction *> barriers;
 
   for (auto BB = F->begin(); BB != F->end(); ++BB) {
@@ -1197,19 +1195,19 @@ void remove_barrier(llvm::Function *F, bool intra_warp_loop,
     FunctionType *VXBarTy =
         FunctionType::get(Type::getVoidTy(context), VXBParams, false);
     FunctionCallee VXBarC = M->getOrInsertFunction("vx_barrier", VXBarTy);
-    
+
     int curBNum_ = 1;
     for (auto B = barriers.begin() + 1; B != barriers.end(); ++B) {
       IRBuilder<> builder(*B);
       CallInst *nW = builder.CreateCall(nWC);
       auto cnt = builder.getInt32(curBNum_++);
       // builder.CreateCall(VXBarC, {cnt, nW});
-    } 
+    }
   }
 
   for (auto inst : barriers) {
     inst->eraseFromParent();
-  }  
+  }
 }
 
 class InsertWarpLoopPass : public llvm::FunctionPass {
@@ -1217,10 +1215,11 @@ class InsertWarpLoopPass : public llvm::FunctionPass {
 public:
   static char ID;
   bool intra_warp_loop;
-  int schedule_flag; 
+  int schedule_flag;
 
   InsertWarpLoopPass(bool intra_warp = 0, int schedule = 0)
-      : FunctionPass(ID), intra_warp_loop(intra_warp), schedule_flag(schedule) {}
+      : FunctionPass(ID), intra_warp_loop(intra_warp), schedule_flag(schedule) {
+  }
 
   virtual void getAnalysisUsage(llvm::AnalysisUsage &AU) const {
     AU.addRequired<DominatorTreeWrapperPass>();
@@ -1368,13 +1367,13 @@ public:
 
     do {
       llvm::errs() << "\niter block: \n";
-       iter->print(llvm::errs());
+      iter->print(llvm::errs());
       llvm::errs() << "iter_size: " << iter->size();
       if (iter->size() != 1 || !isa<llvm::BranchInst>(entry->begin())) {
         llvm::errs() << "became useful CASE 1\n";
         llvm::errs() << "--------------\n";
         is_useless = false;
-        
+
         break;
       }
       if (iter->getTerminator()->getNumSuccessors() > 1) {
@@ -1386,7 +1385,7 @@ public:
       iter = iter->getTerminator()->getSuccessor(0);
       llvm::errs() << "--------------\n";
     } while (iter != exit);
-    
+
     iter = entry;
     bool any_divergent_var = false;
     // create a vector of BasicBlock*
@@ -1430,7 +1429,7 @@ public:
           // pick the “other” successor that isn’t the back‐edge
           BasicBlock *succ0 = BI->getSuccessor(0);
           BasicBlock *succ1 = BI->getSuccessor(1);
-          
+
           // check if the successor is in the checked_blocks
           if (std::find(checked_blocks.begin(), checked_blocks.end(), succ0) ==
               checked_blocks.end()) {
@@ -1444,18 +1443,18 @@ public:
           iter = iter->getTerminator()->getSuccessor(0);
         }
       }
-        
+
       llvm::errs() << iter->getName().str() << "\n";
       llvm::errs() << exit->getName().str() << "\n";
       llvm::errs() << "iter, exit check--------------\n";
 
     } while (iter != exit);
 
-    divergent_found:
+  divergent_found:
     if (is_useless || !any_divergent_var) {
       return;
     }
-    
+
     assert(current_region.wrapped_block.count(entry) != 0);
     current_region.start_block = entry;
     current_region.end_block = exit;
@@ -1477,10 +1476,10 @@ public:
         auto func_name = call_inst->getCalledOperand()->getName().str();
         if (func_name == "llvm.nvvm.barrier0" ||
             func_name == "llvm.nvvm.barrier.sync") {
-              // print the whole function(s)
-              printf("found the barrier in function (initial)");
-              call_inst->getParent()->getParent()->print(llvm::errs());
-              
+          // print the whole function(s)
+          printf("found the barrier in function (initial)");
+          call_inst->getParent()->getParent()->print(llvm::errs());
+
           exit_blocks.push_back(&(*s));
         }
         // when handling intra warp loop, we need also split the blocks
@@ -1500,7 +1499,8 @@ public:
     while (!exit_blocks.empty()) {
       BasicBlock *exit = exit_blocks.back();
       exit_blocks.pop_back();
-      getParallelRegionBefore(exit, intra_warp_loop, parallel_regions, DI); // exit=bb that has barrier at the beginning
+      getParallelRegionBefore(exit, intra_warp_loop, parallel_regions,
+                              DI); // exit=bb that has barrier at the beginning
     }
     return parallel_regions;
   }
@@ -1516,7 +1516,6 @@ public:
     contextArrays.clear();
     tempInstructionIds.clear();
     tempInstructionIndex = 0;
-
 
     // get DivergenceInfo
     // Removed for LLVM 18 (No Divergence Analysis)
@@ -1534,7 +1533,7 @@ public:
 
     llvm::FunctionAnalysisManager DummyFAM;
     llvm::TargetTransformInfo TTI =
-        target_machine->getTargetIRAnalysis().run(F, DummyFAM); 
+        target_machine->getTargetIRAnalysis().run(F, DummyFAM);
         */
     // DivergenceInfo DI(F, *DT, *PDT, LI, TTI, /*KnownReducible*/ true);
 
@@ -1563,11 +1562,12 @@ public:
     auto parallel_regions = getParallelRegions(&F, intra_warp_loop, DI);
     printf("print parallel region\n");
     print_parallel_region(parallel_regions);
-    // assert(!parallel_regions.empty() && "can not find any parallel regions\n");
+    // assert(!parallel_regions.empty() && "can not find any parallel
+    // regions\n");
     printf("print parallel region done!\n");
     if (parallel_regions.empty()) {
       remove_barrier(&F, intra_warp_loop, schedule_flag);
-      return 1;      
+      return 1;
     }
 
     if (intra_warp_loop) {
@@ -1607,7 +1607,6 @@ bool has_warp_barrier(llvm::Module *M) {
     }
   return false;
 }
-
 
 void insert_warp_loop(llvm::Module *M) {
   llvm::legacy::PassManager Passes;
