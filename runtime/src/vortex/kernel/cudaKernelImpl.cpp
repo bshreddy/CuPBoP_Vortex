@@ -1,8 +1,8 @@
 #include "cudaKernelImpl.h"
 #include <vx_intrinsics.h>
+#include <vx_tensor.h>
 #include <vx_print.h>
 #include <math.h>
-#include <atomic>
 
 __attribute__((always_inline)) double __nv_exp(double base) { return exp(base); }
 __attribute__((always_inline)) double __nv_sqrt(double v) { return sqrt(v); }
