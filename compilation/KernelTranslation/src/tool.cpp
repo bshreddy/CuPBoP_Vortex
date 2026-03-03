@@ -1,16 +1,22 @@
 #include "tool.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
+#include "llvm/Support/Alignment.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
 
 // LLVM 18
@@ -28,8 +34,10 @@
 #include "cg_sync.h"
 #include "llvm_type_utils.h"
 
+#include <cstdio>
 #include <iostream>
 #include <set>
+#include <utility>
 
 using namespace llvm;
 
@@ -1028,4 +1036,93 @@ Value *createGEP(IRBuilder<> &B, Value *ptr, ArrayRef<Value *> idxlist) {
     return nullptr;
   }
   return B.CreateGEP(elementType, ptr, idxlist);
+}
+
+void replace_wmma_ops(llvm::Module *M) {
+  LLVMContext &context = M->getContext();
+
+  const std::string nv_wmma_fragment_prefix = "class.nvcuda::wmma::fragment";
+  const std::string vx_wmma_fragment_name =
+      "struct.vortex::tensor::wmma_context::fragment_t";
+  DenseMap<std::pair<Type *, unsigned>, StructType *> vxFragmentArraySTs;
+  DenseMap<StructType *, StructType *> cuda2VxTypeMap;
+
+  for (StructType *ST : M->getIdentifiedStructTypes()) {
+    if (!ST->hasName())
+      continue;
+
+    StringRef name = ST->getName();
+    printf("[WMMA] Struct Types: %s\n", name.str().c_str());
+
+    if (name.starts_with(nv_wmma_fragment_prefix)) {
+      if (ST->getNumElements() != 1)
+        continue;
+
+      Type *baseElem = ST->getElementType(0);
+      StructType *baseST = dyn_cast<StructType>(baseElem);
+      if (!baseST || baseST->getNumElements() != 1)
+        continue;
+
+      Type *arrayElem = baseST->getElementType(0);
+      ArrayType *arrayST = dyn_cast<ArrayType>(arrayElem);
+      if (!arrayST)
+        continue;
+
+      unsigned frag_array_size = arrayST->getNumElements();
+      Type *scalarTy = arrayST->getElementType();
+      // This is to handle __half datatypes in Cuda Kernel
+      if (StructType *scalarStruct = dyn_cast<StructType>(scalarTy)) {
+        if (scalarStruct->getNumElements() == 1) {
+          scalarTy = scalarStruct->getElementType(0);
+        }
+      }
+
+      // Create the Fragment types similar to the one specified in cuda kernel
+      std::pair<Type *, unsigned> key =
+          std::make_pair(scalarTy, frag_array_size);
+      if (!vxFragmentArraySTs.count(key)) {
+        ArrayType *vxArrayType =
+            llvm::ArrayType::get(scalarTy, frag_array_size);
+        // std::string struct_name =
+        //     "struct.std::array." + std::to_string(frag_array_size);
+        StructType *vxArrayST =
+            StructType::create(context, "struct.std::array");
+        vxArrayST->setBody(vxArrayType);
+        vxFragmentArraySTs[key] = vxArrayST;
+      }
+      StructType *vxArrayST = vxFragmentArraySTs[key];
+      StructType *vxBaseST = StructType::create(context, vx_wmma_fragment_name);
+      vxBaseST->setBody(vxArrayST);
+      cuda2VxTypeMap[ST] = vxBaseST;
+
+      printf("[WMMA] Mapped type: %s -> %s\n", name.str().c_str(),
+             vxBaseST->getName().str().c_str());
+
+      // TODO: Replace this GlobalVar by going through the uses of ST and
+      // replacing it with vxBaseST new GlobalVariable(*M, vxBaseST,
+      //                    false, // isConstant
+      //                    GlobalValue::PrivateLinkage,
+      //                    UndefValue::get(vxBaseST), // Initialize with undef
+      //                    "__dummy_keep_type_" +
+      //                        std::to_string(frag_array_size));
+    }
+  }
+
+  // Replace any allocations made using nvcuda::wmma
+    for (Function &F : *M) {
+      for (BasicBlock &BB : F) {
+        for (Instruction &I : BB) {
+          if (AllocaInst *allocaInst = dyn_cast<AllocaInst>(&I)) {
+            Type *allocType = allocaInst->getAllocatedType();
+            // Check if this allocation uses one of our mapped types
+            if (StructType *nvcudaST = dyn_cast<StructType>(allocType)) {
+              if (cuda2VxTypeMap.count(nvcudaST)) {
+                allocaInst->setAllocatedType(cuda2VxTypeMap[nvcudaST]);
+                allocaInst->setAlignment(Align(4));
+              }
+            }
+          }
+        }
+      }
+    }
 }

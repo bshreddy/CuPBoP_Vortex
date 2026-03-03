@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
 
   // inline, and create auxiliary global variables
   std::cout << "init_block\n" << std::flush;
-  printIR(program);
+  // printIR(program);
   init_block(program, fout);
 
   dumpFile(program, "0.ll");
@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
 
   // VerifyModule(program);
   std::cout << "insert_warp_loop\n" << std::flush;
-  printIR(program);
+  // printIR(program);
   insert_warp_loop(program);
 
   // dumpFile(program, "5.ll");
@@ -92,6 +92,13 @@ int main(int argc, char **argv) {
   std::cout << "replace\n" << std::flush;
   // printIR(program);
   replace_built_in_function(program);
+
+  // Replace wmma ops. Doing this as a seperate func. Want to have each change
+  // done as a pass eventually.
+  std::cout << "WMMA -> Vortex Tensor Ops\n" << std::flush;
+  dumpFile(program, "pre_wmma_pass.ll");
+  replace_wmma_ops(program);
+  dumpFile(program, "wmma_pass.ll");
 
   // dumpFile(program, "6.ll");
   VerifyModule(program);
