@@ -1,6 +1,8 @@
 #include "tool.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -9,12 +11,14 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
+#include "llvm/ProfileData/ItaniumManglingCanonicalizer.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FileSystem.h"
@@ -37,6 +41,7 @@
 #include <cstdio>
 #include <iostream>
 #include <set>
+#include <string>
 #include <utility>
 
 using namespace llvm;
@@ -1038,6 +1043,13 @@ Value *createGEP(IRBuilder<> &B, Value *ptr, ArrayRef<Value *> idxlist) {
   return B.CreateGEP(elementType, ptr, idxlist);
 }
 
+std::string maybeDemangle(StringRef Name) {
+  if (Name.starts_with("_Z") || Name.starts_with("?")) {
+    return demangle(Name.str());
+  }
+  return Name.str();
+}
+
 void replace_wmma_ops(llvm::Module *M) {
   LLVMContext &context = M->getContext();
 
@@ -1109,20 +1121,99 @@ void replace_wmma_ops(llvm::Module *M) {
   }
 
   // Replace any allocations made using nvcuda::wmma
-    for (Function &F : *M) {
-      for (BasicBlock &BB : F) {
-        for (Instruction &I : BB) {
-          if (AllocaInst *allocaInst = dyn_cast<AllocaInst>(&I)) {
-            Type *allocType = allocaInst->getAllocatedType();
-            // Check if this allocation uses one of our mapped types
-            if (StructType *nvcudaST = dyn_cast<StructType>(allocType)) {
-              if (cuda2VxTypeMap.count(nvcudaST)) {
-                allocaInst->setAllocatedType(cuda2VxTypeMap[nvcudaST]);
-                allocaInst->setAlignment(Align(4));
-              }
+  for (Function &F : *M) {
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (AllocaInst *allocaInst = dyn_cast<AllocaInst>(&I)) {
+          Type *allocType = allocaInst->getAllocatedType();
+          // Check if this allocation uses one of our mapped types
+          if (StructType *nvcudaST = dyn_cast<StructType>(allocType)) {
+            if (cuda2VxTypeMap.count(nvcudaST)) {
+              allocaInst->setAllocatedType(cuda2VxTypeMap[nvcudaST]);
+              allocaInst->setAlignment(Align(4));
             }
           }
         }
       }
     }
+  }
+
+  // Get NVVM load_matrix_sync functions
+  // Assuming the load_matrix_sync are not inlined.
+  // TODO: Remove the assumption later
+  DenseSet<Function *> removedFuncs;
+  for (Function &F : *M) {
+    if (F.isIntrinsic() || F.isDeclaration()) {
+      if(F.getName().starts_with("llvm.nvvm.wmma")) {
+        removedFuncs.insert(&F);
+      }
+
+      continue;
+    }
+
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (CallInst *callInst = dyn_cast<CallInst>(&I)) {
+          Function *callee = callInst->getCalledFunction();
+          if (!callee)
+            continue;
+
+          std::string N = maybeDemangle(callee->getName());
+          // printf("[WMMA] Func: %s\n", N.c_str());
+
+          std::string kind = "";
+          if (N.find("nvcuda::wmma::fill_fragment") != std::string::npos) {
+            kind = "fill_fragment";
+          } else if (N.find("nvcuda::wmma::load_matrix_sync") !=
+                     std::string::npos) {
+            kind = "load_matrix_sync";
+          } else if (N.find("nvcuda::wmma::store_matrix_sync") !=
+                     std::string::npos) {
+            kind = "store_matrix_sync";
+          }
+          if (N.find("nvcuda::wmma::mma_sync") != std::string::npos) {
+            kind = "mma_sync";
+          }
+
+          if (kind.empty())
+            continue;
+
+          // TODO: replace with function in vx_tensor.h
+          std::string replacementFuncName = "vortex.wmma." + kind;
+          FunctionType *FTy = callee->getFunctionType();
+          Function *Nop = M->getFunction(replacementFuncName);
+          if (!Nop) {
+            Nop = Function::Create(FTy, GlobalValue::InternalLinkage,
+                                   replacementFuncName, M);
+            Nop->setCallingConv(callee->getCallingConv());
+            BasicBlock *Entry = BasicBlock::Create(context, "entry", Nop);
+            IRBuilder<> B(Entry);
+
+            if (FTy->getReturnType()->isVoidTy()) {
+              B.CreateRetVoid();
+            } else {
+              Type *RT = FTy->getReturnType();
+              Value *RetV = nullptr;
+
+              if (RT->isIntegerTy() || RT->isFloatingPointTy() ||
+                  RT->isPointerTy()) {
+                RetV = Constant::getNullValue(RT);
+              } else {
+                RetV = UndefValue::get(RT);
+              }
+              B.CreateRet(RetV);
+            }
+          }
+
+          callInst->setCalledFunction(Nop);
+          removedFuncs.insert(callee);
+        }
+      }
+    }
+  }
+
+  for(Function *F: removedFuncs) {
+    F->dropAllReferences();
+    F->removeFromParent();
+  }
 }

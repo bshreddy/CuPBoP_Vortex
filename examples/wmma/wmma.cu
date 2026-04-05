@@ -16,21 +16,21 @@ __global__ void wmma_test_kernel(half *A, half *B, float *C) {
 
     wmma::fill_fragment(c_frag, 0.0f);
 
-    wmma::load_matrix_sync(a_frag, A, K);
-    wmma::load_matrix_sync(b_frag, B, N);
+    // wmma::load_matrix_sync(a_frag, A, K);
+    // wmma::load_matrix_sync(b_frag, B, N);
 
-    wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+    // wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
 
-    wmma::store_matrix_sync(C, c_frag, N, wmma::mem_row_major);
+    // wmma::store_matrix_sync(C, c_frag, N, wmma::mem_row_major);
 }
 
 int main() {
     half *A, *B;
     float *C;
 
-    cudaMallocManaged(&A, M*K*sizeof(half));
-    cudaMallocManaged(&B, K*N*sizeof(half));
-    cudaMallocManaged(&C, M*N*sizeof(float));
+    cudaMalloc(&A, M*K*sizeof(half));
+    cudaMalloc(&B, K*N*sizeof(half));
+    cudaMalloc(&C, M*N*sizeof(float));
 
     for (int i = 0; i < M*K; i++)
         A[i] = __float2half(1.0f);

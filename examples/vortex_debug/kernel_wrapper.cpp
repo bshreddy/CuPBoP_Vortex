@@ -55,10 +55,10 @@ return p;
 
 
  extern "C" {
-    extern void vectorAddPKfS0_Pfi_wrapper(void *args);
+    extern void wmma_test_kernelP6__halfS0_Pf_wrapper(void *args);
 }
 
-void cuda_vectorAddPKfS0_Pfi_wrapper(void* args) {
+void cuda_wmma_test_kernelP6__halfS0_Pf_wrapper(void* args) {
     block_index_x = blockIdx.x;
     block_index_y = blockIdx.y;
     block_index_z = blockIdx.z;
@@ -69,11 +69,11 @@ void cuda_vectorAddPKfS0_Pfi_wrapper(void* args) {
 
 //    vx_printf("kernel_warpper: group=(%d, %d) thread=(%d, %d)\n", blockIdx.x, blockIdx.y, thread_id_x, thread_id_y);
 
-    vectorAddPKfS0_Pfi_wrapper((void **)args);
+    wmma_test_kernelP6__halfS0_Pf_wrapper((void **)args);
 }
 
 vx_kernel_func_cb callbacks[] = {
-    cuda_vectorAddPKfS0_Pfi_wrapper, 
+    cuda_wmma_test_kernelP6__halfS0_Pf_wrapper, 
 };
 
 int main() {

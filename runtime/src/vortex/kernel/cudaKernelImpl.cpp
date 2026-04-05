@@ -1,4 +1,5 @@
 #include "cudaKernelImpl.h"
+#include "tensor_cfg.h"
 #include <vx_intrinsics.h>
 #include <vx_tensor.h>
 #include <vx_print.h>
@@ -121,4 +122,15 @@ float __shfl_xor_sync(int mem_mask, float var, int laneMask, int c) {
     int vali = *reinterpret_cast<int*>(&var);
     int ri = vx_shfl_bfly(vali, laneMask, c, mask);
     return *reinterpret_cast<float*>(&ri);
+}
+
+#ifndef NUM_THREADS
+#define NUM_THREADS 4
+#endif
+
+__attribute__((always_inline))
+void __vx_fill_fragment_f32(void* frag, float v) {
+  using ctx = vortex::tensor::wmma_context<NUM_THREADS, vortex::tensor::fp32, vortex::tensor::fp32>;
+  auto* f = reinterpret_cast<ctx::fragment_acc*>(frag);
+  ctx::fill_fragment(*f, v);
 }
