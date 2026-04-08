@@ -1410,9 +1410,10 @@ void remove_barrier(llvm::Function *F, bool intra_warp_loop,
     if (auto *CI = dyn_cast<CallInst>(inst)) {
       if (CI->getCalledFunction() &&
           CI->getCalledFunction()->getName() == "cupbop.shfl.barrier") {
-        // Just erase — InsertConditionalBarrier already added barrier0 at
-        // the if-guard branch/merge points, and split_block_by_sync already
-        // split at this marker. No need to keep it.
+        // Replace with real barrier0 to maintain store→load ordering
+        // in the intra_warp loop. The barrier ensures all threads store
+        // to warp_shfl[] before any thread loads.
+        CreateInterWarpBarrier(CI);
         CI->eraseFromParent();
         continue;
       }
