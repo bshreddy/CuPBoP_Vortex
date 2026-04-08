@@ -1481,6 +1481,23 @@ void replace_asm_call(llvm::Module *M) {
               }
               ldmatrix_map.clear();
 
+            } else if (asm_str.find("cvt.rn.f16.f32") != std::string::npos) {
+              // float → half conversion: replace with fptrunc
+              IRBuilder<> builder(Call);
+              Value *src = Call->getArgOperand(0); // float input
+              Value *result = builder.CreateFPTrunc(src, HalfTy, "cvt.f32.f16");
+              // The asm returns i16 (bitcast of half)
+              Value *i16val = builder.CreateBitCast(result, llvm::Type::getInt16Ty(context));
+              Call->replaceAllUsesWith(i16val);
+              need_remove.push_back(Call);
+            } else if (asm_str.find("cvt.f32.f16") != std::string::npos) {
+              // half → float conversion: replace with fpext
+              IRBuilder<> builder(Call);
+              Value *src = Call->getArgOperand(0); // i16 input (bitcast of half)
+              Value *half_val = builder.CreateBitCast(src, HalfTy);
+              Value *result = builder.CreateFPExt(half_val, F32, "cvt.f16.f32");
+              Call->replaceAllUsesWith(result);
+              need_remove.push_back(Call);
             } else {
               if (cupbop_debug())
                 printf("warning: unknown PTX InlineAsm: %s (removing)\n",

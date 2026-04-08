@@ -582,6 +582,31 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
     if (!inline_func_with_tid(M))
       break;
   }
+  // Inline ALL remaining device functions (e.g. __float2half, __half2float)
+  // that aren't covered by inline_func_with_tid. Without inlining, these
+  // functions remain as external calls that have no implementation on Vortex.
+  {
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      for (auto &F : *M) {
+        if (F.isDeclaration() || F.isIntrinsic()) continue;
+        if (isKernelFunction(M, &F)) continue;
+        SmallVector<CallInst*, 8> calls;
+        for (auto *U : F.users())
+          if (auto *CI = dyn_cast<CallInst>(U))
+            calls.push_back(CI);
+        for (auto *CI : calls) {
+          InlineFunctionInfo IFI;
+          if (InlineFunction(*CI, IFI).isSuccess()) {
+            if (cupbop_debug()) printf("inline-dev: %s\n", F.getName().str().c_str());
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+
   // Inline helper functions that transitively call shfl into kernel functions.
   // Only needed for SCHE_0 (FLAT mode) where shfl is emulated via warp_shfl array.
   // For SCHE_2, shfl wrappers are replaced in-place by replaceWarpShfl1to1.
