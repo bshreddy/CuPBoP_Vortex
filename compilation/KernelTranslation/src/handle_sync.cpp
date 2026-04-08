@@ -38,7 +38,8 @@ void split_block_by_sync(llvm::Function *F) {
         if (func_name == "llvm.nvvm.barrier0" ||
             isWarpSync(func_name) ||
             func_name == "llvm.nvvm.barrier.sync" ||
-            isCGSync(func_name)) {
+            isCGSync(func_name) ||
+            func_name == "cupbop.shfl.barrier") {
           //print whole block(b)
           
           if (cupbop_debug()) {

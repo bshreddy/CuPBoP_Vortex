@@ -1383,7 +1383,8 @@ bool has_barrier(llvm::BasicBlock *B) {
         continue;
       auto func_name = Call->getCalledFunction()->getName().str();
       if (func_name == "llvm.nvvm.barrier0" || isWarpSync(func_name) ||
-          func_name == "llvm.nvvm.barrier.sync") {
+          func_name == "llvm.nvvm.barrier.sync" ||
+          func_name == "cupbop.shfl.barrier") {
         return true;
       }
     }

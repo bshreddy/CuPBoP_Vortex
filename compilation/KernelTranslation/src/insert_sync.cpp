@@ -474,7 +474,8 @@ public:
           auto func_name = Call->getCalledFunction()->getName().str();
           if (func_name == "llvm.nvvm.barrier0" ||
               isWarpSync(func_name) ||
-              func_name == "llvm.nvvm.barrier.sync") {
+              func_name == "llvm.nvvm.barrier.sync" ||
+              func_name == "cupbop.shfl.barrier") {
                 //printf("found barrier inst new!\n");
                 // print the whole block
                 // (*i)->print(errs());

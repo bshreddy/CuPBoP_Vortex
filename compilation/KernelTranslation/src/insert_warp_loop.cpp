@@ -1410,8 +1410,9 @@ void remove_barrier(llvm::Function *F, bool intra_warp_loop,
     if (auto *CI = dyn_cast<CallInst>(inst)) {
       if (CI->getCalledFunction() &&
           CI->getCalledFunction()->getName() == "cupbop.shfl.barrier") {
-        // Replace with real barrier0 — keeps intra_warp loop split working
-        CreateInterWarpBarrier(CI);
+        // Just erase — InsertConditionalBarrier already added barrier0 at
+        // the if-guard branch/merge points, and split_block_by_sync already
+        // split at this marker. No need to keep it.
         CI->eraseFromParent();
         continue;
       }
@@ -1482,9 +1483,8 @@ public:
             has_barrier = 1;
           if (isWarpSync(func_name) && intra_warp_loop)
             has_barrier = 1;
-          // cupbop.shfl.barrier is NOT treated as a region boundary here —
-          // it must stay inside the if guard's parallel region to preserve
-          // the conditional execution structure.
+          if (func_name == "cupbop.shfl.barrier")
+            has_barrier = 1;
         }
       }
       // print current block
@@ -1693,15 +1693,12 @@ public:
         if (func_name == "llvm.nvvm.barrier0" ||
             func_name == "llvm.nvvm.barrier.sync") {
           fprintf(stderr, "[exit] found barrier at BB: %s\n", s->getName().str().c_str());
-              // print the whole function(s)
-              //printf("found the barrier in function (initial)");
-              // call_inst->getParent()->getParent()->print(llvm::errs());
-              
           exit_blocks.push_back(&(*s));
         }
         // when handling intra warp loop, we need also split the blocks
-        // between warp barrier
-        if (intra_warp_loop && isWarpSync(func_name)) {
+        // between warp barrier and shfl barrier
+        if (intra_warp_loop && (isWarpSync(func_name) ||
+            func_name == "cupbop.shfl.barrier")) {
           exit_blocks.push_back(&(*s));
         }
 
