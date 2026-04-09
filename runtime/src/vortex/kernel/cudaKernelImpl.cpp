@@ -370,7 +370,7 @@ extern "C" void __vx_wmma_load_a_m16n16k16_row_f16(
     int32_t ldm) { // stride in fp16 elements
 
   auto *dst = reinterpret_cast<uint32_t *>(frag);
-  auto *src = reinterpret_cast<const uint8_t *>(p);
+  auto *src = reinterpret_cast<const uint16_t *>(p);
 
   uint32_t lane = __vx_get_lane_id();
 
@@ -383,11 +383,10 @@ extern "C" void __vx_wmma_load_a_m16n16k16_row_f16(
 
     uint32_t off = elem_row * static_cast<uint32_t>(ldm) + elem_col;
 
-    // Two contiguous fp16 values = 4 bytes = one packed i32 register.
-    uint32_t packed;
-    __builtin_memcpy(&packed, src + static_cast<uintptr_t>(off) * 2u, 4);
-
-    dst[r] = packed;
+    // Two contiguous fp16 values packed into one i32 register.
+    uint16_t h0 = src[off];
+    uint16_t h1 = src[off + 1u];
+    dst[r] = static_cast<uint32_t>(h0) | (static_cast<uint32_t>(h1) << 16);
   }
 }
 
@@ -429,7 +428,7 @@ __vx_wmma_load_b_m16n16k16_row_f16(void *frag,    // 8 x i32 fragment storage
                                    int32_t ldm) { // stride in half elements
 
   auto *dst = reinterpret_cast<uint32_t *>(frag);
-  auto *src = reinterpret_cast<const uint8_t *>(p);
+  auto *src = reinterpret_cast<const uint16_t *>(p);
 
   uint32_t lane = __vx_get_lane_id();
 
@@ -445,10 +444,8 @@ __vx_wmma_load_b_m16n16k16_row_f16(void *frag,    // 8 x i32 fragment storage
     uint32_t off0 = row * static_cast<uint32_t>(ldm) + col;
     uint32_t off1 = off0 + static_cast<uint32_t>(ldm); // next row
 
-    uint16_t h0;
-    uint16_t h1;
-    __builtin_memcpy(&h0, src + static_cast<uintptr_t>(off0) * 2u, 2);
-    __builtin_memcpy(&h1, src + static_cast<uintptr_t>(off1) * 2u, 2);
+    uint16_t h0 = src[off0];
+    uint16_t h1 = src[off1];
 
     // Matches <2 x half> {h0, h1} packed into one i32 on little-endian targets.
     dst[r] = static_cast<uint32_t>(h0) | (static_cast<uint32_t>(h1) << 16);

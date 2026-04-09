@@ -1,12 +1,8 @@
-// sgemm_tcu_dxa.cu — SGEMM with cp.async (→DXA on Vortex) + wmma (→TCU)
+// sgemm_tcu_dxa.cu — SGEMM with shared memory tiling + wmma
 //
-// Standard CUDA APIs only:
-//   cp.async: global → shared memory async copy
-//     - NVIDIA GPU: hardware async copy unit
-//     - Vortex: CuPBoP translates to DXA hardware DMA
-//   wmma: tensor core matrix multiply
-//     - NVIDIA GPU: Tensor Core
-//     - Vortex: CuPBoP translates to TCU instruction
+// Standard CUDA APIs:
+//   wmma: tensor core matrix multiply (CuPBoP translates to TCU)
+//   shared memory: cooperative tile loading
 //
 // A: M×K (fp16, row-major), B: K×N (fp16, row-major), C: M×N (fp32)
 
@@ -23,28 +19,6 @@ using namespace nvcuda;
 #define WMMA_N 16
 #define WMMA_K 16
 
-// cp.async: copy 16 bytes from global to shared memory
-__device__ __forceinline__ void cp_async_16(void* smem, const void* gmem) {
-#ifdef __CUDA_ARCH__
-    unsigned smem_addr = static_cast<unsigned>(__cvta_generic_to_shared(smem));
-    asm volatile("cp.async.ca.shared.global [%0], [%1], 16;\n"
-                 :: "r"(smem_addr), "l"(gmem));
-#endif
-}
-
-__device__ __forceinline__ void cp_async_commit() {
-#ifdef __CUDA_ARCH__
-    asm volatile("cp.async.commit_group;\n" :::);
-#endif
-}
-
-__device__ __forceinline__ void cp_async_wait() {
-#ifdef __CUDA_ARCH__
-    asm volatile("cp.async.wait_group 0;\n" ::: "memory");
-#endif
-}
-
-// Kernel: cp.async tiles into shared memory, wmma computes
 __global__ void sgemm_tcu_dxa_kernel(const half* __restrict__ A,
                                       const half* __restrict__ B,
                                       float* __restrict__ C,
@@ -52,10 +26,9 @@ __global__ void sgemm_tcu_dxa_kernel(const half* __restrict__ A,
     int tile_row = blockIdx.y * WMMA_M;
     int tile_col = blockIdx.x * WMMA_N;
 
-    // Shared memory for one A tile and one B tile
-    // A tile: 16×16 halfs = 512 bytes, B tile: 16×16 halfs = 512 bytes
-    __shared__ half shA[WMMA_M * WMMA_K];
-    __shared__ half shB[WMMA_K * WMMA_N];
+    // Padded to 32 rows: Vortex TCU load functions access beyond 16-row tile
+    __shared__ half shA[32 * WMMA_K];
+    __shared__ half shB[32 * WMMA_N];
 
     wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> fragA;
     wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> fragB;
@@ -63,36 +36,29 @@ __global__ void sgemm_tcu_dxa_kernel(const half* __restrict__ A,
     wmma::fill_fragment(fragC, 0.0f);
 
     int tid = threadIdx.x;
-    // 16×16 = 256 halfs = 512 bytes. 32 threads, each copies 16 bytes (8 halfs)
     int elems_per_thread = (WMMA_M * WMMA_K) / blockDim.x; // 8
 
+    // Zero-init padded shared memory (Vortex TCU load reads beyond 16-row tile)
+    for (int i = tid; i < 32 * WMMA_K; i += blockDim.x) shA[i] = __float2half(0.0f);
+    for (int i = tid; i < 32 * WMMA_N; i += blockDim.x) shB[i] = __float2half(0.0f);
+    __syncthreads();
+
     for (int k = 0; k < K; k += WMMA_K) {
-        // cp.async: load A tile [tile_row..+16, k..+16] into shA
-        for (int i = 0; i < elems_per_thread; i += 8) {
-            int elem_base = tid * elems_per_thread + i;
-            int r = elem_base / WMMA_K;
-            int c = elem_base % WMMA_K;
-            int src_row = tile_row + r;
-            int src_col = k + c;
-            if (src_row < M && src_col + 7 < K) {
-                cp_async_16(&shA[elem_base], &A[src_row * K + src_col]);
-            }
+        // Cooperative tile load into shared memory
+        for (int i = 0; i < elems_per_thread; i++) {
+            int elem = tid * elems_per_thread + i;
+            int r = elem / WMMA_K;
+            int c = elem % WMMA_K;
+            if (tile_row + r < M && k + c < K)
+                shA[elem] = A[(tile_row + r) * K + (k + c)];
         }
-
-        // cp.async: load B tile [k..+16, tile_col..+16] into shB
-        for (int i = 0; i < elems_per_thread; i += 8) {
-            int elem_base = tid * elems_per_thread + i;
-            int r = elem_base / WMMA_N;
-            int c = elem_base % WMMA_N;
-            int src_row = k + r;
-            int src_col = tile_col + c;
-            if (src_row < K && src_col + 7 < N) {
-                cp_async_16(&shB[elem_base], &B[src_row * N + src_col]);
-            }
+        for (int i = 0; i < elems_per_thread; i++) {
+            int elem = tid * elems_per_thread + i;
+            int r = elem / WMMA_N;
+            int c = elem % WMMA_N;
+            if (k + r < K && tile_col + c < N)
+                shB[elem] = B[(k + r) * N + (tile_col + c)];
         }
-
-        cp_async_commit();
-        cp_async_wait();
         __syncthreads();
 
         // Load from shared memory and compute
@@ -128,7 +94,7 @@ int main(int argc, char** argv) {
             else { fprintf(stderr, "Size must be multiple of %d\n", WMMA_M); return -1; }
         }
     }
-    printf("SGEMM TCU+DXA (cp.async + wmma): M=%d, N=%d, K=%d\n", M, N, K);
+    printf("SGEMM TCU+DXA (shared mem + wmma): M=%d, N=%d, K=%d\n", M, N, K);
 
     size_t sizeA = M * K * sizeof(half);
     size_t sizeB = K * N * sizeof(half);

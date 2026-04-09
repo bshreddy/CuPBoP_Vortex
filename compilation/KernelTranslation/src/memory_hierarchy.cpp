@@ -648,9 +648,17 @@ void mem_share2local(llvm::Module *M) {
 
       auto replaceUsesInFunc = [&](GlobalVariable *GV, Value *NewV) {
         SmallVector<Use*, 16> toFix;
-        for (Use &U : GV->uses())
-          if (auto *I = dyn_cast<Instruction>(U.getUser()))
+        for (Use &U : GV->uses()) {
+          if (auto *I = dyn_cast<Instruction>(U.getUser())) {
             if (I->getFunction() == &F) toFix.push_back(&U);
+          } else {
+            fprintf(stderr, "[mem2local] SKIPPED non-inst user of %s: ",
+                    GV->getName().str().c_str());
+            U.getUser()->print(llvm::errs()); fprintf(stderr, "\n");
+          }
+        }
+        fprintf(stderr, "[mem2local] replacing %d uses of %s\n",
+                (int)toFix.size(), GV->getName().str().c_str());
         for (auto *U : toFix) U->set(NewV);
       };
       for (auto *GV : usedStatic)  replaceUsesInFunc(GV, repl[GV]);

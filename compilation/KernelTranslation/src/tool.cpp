@@ -2711,3 +2711,167 @@ void replace_wmma_intrinsics(llvm::Module *M) {
     F->removeFromParent();
   }
 }
+
+// Replace raw NVVM WMMA intrinsics (llvm.nvvm.wmma.*) with Vortex runtime
+// calls. These appear when clang inlines the mma.hpp C++ helper functions
+// at compile time, leaving only the low-level NVVM intrinsics which
+// collectWMMADesc (demangled-name matcher) cannot catch.
+void replace_nvvm_wmma_intrinsics(llvm::Module *M) {
+  LLVMContext &Ctx = M->getContext();
+  Type *F32 = Type::getFloatTy(Ctx);
+  Type *HalfTy = Type::getHalfTy(Ctx);
+  Type *I32 = Type::getInt32Ty(Ctx);
+  Type *PtrTy = PointerType::getUnqual(Ctx);
+  Type *VoidTy = Type::getVoidTy(Ctx);
+  Type *V2HalfTy = FixedVectorType::get(HalfTy, 2);
+
+  SmallVector<CallInst *, 16> ToReplace;
+
+  for (Function &F : *M) {
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        auto *CI = dyn_cast<CallInst>(&I);
+        if (!CI)
+          continue;
+        Function *Callee = CI->getCalledFunction();
+        if (!Callee)
+          continue;
+        if (Callee->getName().starts_with("llvm.nvvm.wmma."))
+          ToReplace.push_back(CI);
+      }
+    }
+  }
+
+  if (ToReplace.empty())
+    return;
+
+  DBG_PRINT("[nvvm-wmma] found %zu NVVM WMMA intrinsics to replace\n",
+            ToReplace.size());
+
+  for (CallInst *CI : ToReplace) {
+    Function *Callee = CI->getCalledFunction();
+    StringRef Name = Callee->getName();
+    IRBuilder<> B(CI);
+
+    if (Name.contains(".load.a.") || Name.contains(".load.b.")) {
+      // llvm.nvvm.wmma.m16n16k16.load.{a,b}.{row,col}.stride.f16.p0
+      // Args: (ptr src, i32 stride) -> {<2 x half> x8}
+      bool isA = Name.contains(".load.a.");
+      bool isRow = Name.contains(".row.");
+      const char *rtName = isA
+          ? (isRow ? "__vx_wmma_load_a_m16n16k16_row_f16"
+                   : "__vx_wmma_load_a_m16n16k16_col_f16")
+          : (isRow ? "__vx_wmma_load_b_m16n16k16_row_f16"
+                   : "__vx_wmma_load_b_m16n16k16_col_f16");
+
+      DBG_PRINT("[nvvm-wmma] %s -> %s\n", Name.str().c_str(), rtName);
+
+      Value *Src = CI->getArgOperand(0);
+      Value *Stride = CI->getArgOperand(1);
+
+      // Alloca [8 x <2 x half>] at function entry
+      Type *FragTy = ArrayType::get(V2HalfTy, 8);
+      IRBuilder<> AB(&CI->getFunction()->getEntryBlock().front());
+      Value *Frag = AB.CreateAlloca(FragTy, nullptr, "wmma.frag");
+
+      // void runtime(ptr frag, ptr src, i32 ldm)
+      FunctionType *FT = FunctionType::get(VoidTy, {PtrTy, PtrTy, I32}, false);
+      FunctionCallee FC = M->getOrInsertFunction(rtName, FT);
+      B.CreateCall(FC, {Frag, Src, Stride});
+
+      // Load 8 x <2 x half> and build return struct
+      Value *Result = UndefValue::get(CI->getType());
+      for (unsigned i = 0; i < 8; i++) {
+        Value *GEP = B.CreateConstInBoundsGEP2_32(FragTy, Frag, 0, i);
+        Value *Val = B.CreateLoad(V2HalfTy, GEP);
+        Result = B.CreateInsertValue(Result, Val, i);
+      }
+      CI->replaceAllUsesWith(Result);
+      CI->eraseFromParent();
+
+    } else if (Name.contains(".mma.")) {
+      // llvm.nvvm.wmma.m16n16k16.mma.{row}.{row}.f32.f32
+      // Args: (<2 x half> a0..a7, <2 x half> b0..b7, float c0..c7) -> {float x8}
+      DBG_PRINT("[nvvm-wmma] %s -> __vx_wmma_mma_m16n16k16_row_row_f16_f16_f32\n",
+                Name.str().c_str());
+
+      Type *AFragTy = ArrayType::get(V2HalfTy, 8);
+      Type *CFragTy = ArrayType::get(F32, 8);
+
+      IRBuilder<> AB(&CI->getFunction()->getEntryBlock().front());
+      Value *AAlloca = AB.CreateAlloca(AFragTy, nullptr, "wmma.a");
+      Value *BAlloca = AB.CreateAlloca(AFragTy, nullptr, "wmma.b");
+      Value *CAlloca = AB.CreateAlloca(CFragTy, nullptr, "wmma.c");
+      Value *DAlloca = AB.CreateAlloca(CFragTy, nullptr, "wmma.d");
+
+      // Store a0..a7 (<2 x half> args 0-7)
+      for (unsigned i = 0; i < 8; i++) {
+        Value *GEP = B.CreateConstInBoundsGEP2_32(AFragTy, AAlloca, 0, i);
+        B.CreateStore(CI->getArgOperand(i), GEP);
+      }
+      // Store b0..b7 (<2 x half> args 8-15)
+      for (unsigned i = 0; i < 8; i++) {
+        Value *GEP = B.CreateConstInBoundsGEP2_32(AFragTy, BAlloca, 0, i);
+        B.CreateStore(CI->getArgOperand(8 + i), GEP);
+      }
+      // Store c0..c7 (float args 16-23)
+      for (unsigned i = 0; i < 8; i++) {
+        Value *GEP = B.CreateConstInBoundsGEP2_32(CFragTy, CAlloca, 0, i);
+        B.CreateStore(CI->getArgOperand(16 + i), GEP);
+      }
+
+      // void __vx_wmma_mma_...(ptr d, ptr a, ptr b, ptr c)
+      FunctionType *FT = FunctionType::get(VoidTy,
+          {PtrTy, PtrTy, PtrTy, PtrTy}, false);
+      FunctionCallee FC = M->getOrInsertFunction(
+          "__vx_wmma_mma_m16n16k16_row_row_f16_f16_f32", FT);
+      B.CreateCall(FC, {DAlloca, AAlloca, BAlloca, CAlloca});
+
+      // Load d0..d7 and build return struct
+      Value *Result = UndefValue::get(CI->getType());
+      for (unsigned i = 0; i < 8; i++) {
+        Value *GEP = B.CreateConstInBoundsGEP2_32(CFragTy, DAlloca, 0, i);
+        Value *Val = B.CreateLoad(F32, GEP);
+        Result = B.CreateInsertValue(Result, Val, i);
+      }
+      CI->replaceAllUsesWith(Result);
+      CI->eraseFromParent();
+
+    } else if (Name.contains(".store.d.")) {
+      // llvm.nvvm.wmma.m16n16k16.store.d.{row,col}.stride.f32.p0
+      // Args: (ptr dst, float f0..f7, i32 stride) -> void
+      int layout = Name.contains(".store.d.row.") ? 0 : 1;
+      DBG_PRINT("[nvvm-wmma] %s -> __vx_wmma_store_d_m16n16k16_f32 (layout=%d)\n",
+                Name.str().c_str(), layout);
+
+      Type *CFragTy = ArrayType::get(F32, 8);
+      IRBuilder<> AB(&CI->getFunction()->getEntryBlock().front());
+      Value *FragAlloca = AB.CreateAlloca(CFragTy, nullptr, "wmma.store");
+
+      Value *Dst = CI->getArgOperand(0);
+      for (unsigned i = 0; i < 8; i++) {
+        Value *GEP = B.CreateConstInBoundsGEP2_32(CFragTy, FragAlloca, 0, i);
+        B.CreateStore(CI->getArgOperand(1 + i), GEP);
+      }
+      Value *Stride = CI->getArgOperand(9);
+
+      // void __vx_wmma_store_d_m16n16k16_f32(ptr p, ptr frag, i32 ldm, i32 layout)
+      FunctionType *FT = FunctionType::get(VoidTy,
+          {PtrTy, PtrTy, I32, I32}, false);
+      FunctionCallee FC = M->getOrInsertFunction(
+          "__vx_wmma_store_d_m16n16k16_f32", FT);
+      B.CreateCall(FC, {Dst, FragAlloca, Stride,
+                        ConstantInt::get(I32, layout)});
+      CI->eraseFromParent();
+    }
+  }
+
+  // Remove unused NVVM intrinsic declarations
+  SmallVector<Function *, 8> DeadDecls;
+  for (Function &F : *M) {
+    if (F.getName().starts_with("llvm.nvvm.wmma.") && F.use_empty())
+      DeadDecls.push_back(&F);
+  }
+  for (Function *F : DeadDecls)
+    F->removeFromParent();
+}
