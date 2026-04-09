@@ -25,6 +25,8 @@ EXAMPLES = \
 	psum \
 	saxpy \
 	sgemm \
+	sgemm_tcu \
+	sgemm_tcu_dxa \
 	shuffle-cuda \
 	stencil \
 	transpose \
