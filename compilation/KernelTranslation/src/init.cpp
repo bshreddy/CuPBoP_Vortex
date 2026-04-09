@@ -594,7 +594,10 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
         if (isKernelFunction(M, &F)) continue;
         // Skip libdevice math functions (__nv_*) — LLVM optimization
         // miscompiles their inlined bodies (e.g. erfcf → NaN).
+        // Skip Vortex runtime functions (__vx_*) — LLVM eliminates their
+        // inlined bodies (DXA, barrier) as side-effect-free.
         if (F.getName().starts_with("__nv_")) continue;
+        if (F.getName().contains("__vx_")) continue;
         SmallVector<CallInst*, 8> calls;
         for (auto *U : F.users())
           if (auto *CI = dyn_cast<CallInst>(U))
@@ -692,6 +695,22 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
         RF->eraseFromParent();
       if (cupbop_debug())
         printf("[init] replaced %zu __nvvm_reflect calls with 1\n", calls.size());
+    }
+  }
+
+  // Mark __vx_* Vortex runtime functions as having side effects so LLVM's
+  // O3 optimizer doesn't eliminate them. These are DXA/barrier/local-mem
+  // functions with hardware side effects invisible to LLVM.
+  // They may be definitions (inline in CUDA) or declarations (external).
+  for (auto &F : *M) {
+    // Match both unmangled (__vx_*) and C++ mangled (_Z*__vx_*) names
+    if (F.getName().contains("__vx_")) {
+      F.addFnAttr(Attribute::NoInline);
+      F.setMemoryEffects(MemoryEffects::unknown());
+      F.removeFnAttr(Attribute::ReadNone);
+      F.removeFnAttr(Attribute::ReadOnly);
+      if (cupbop_debug())
+        printf("[init] marked __vx_ function: %s\n", F.getName().str().c_str());
     }
   }
 

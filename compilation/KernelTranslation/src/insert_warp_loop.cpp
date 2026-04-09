@@ -1308,13 +1308,14 @@ void add_warp_loop(std::vector<ParallelRegion> parallel_regions,
     builder.CreateBr(next_block);
     loop_cond->getTerminator()->replaceUsesOfWith(next_block, reset_index);
 
-    // Redirect conditional exits from wrapped blocks that go outside the loop.
-    // When a conditional branch has one target inside the loop and one outside,
-    // the outside exit breaks the warp loop. We redirect the outside target to
-    // loop_inc, and after the loop completes (in reset_block), we add a
-    // conditional branch to the original outside target based on the condition
-    // evaluated by thread 0 / warp 0.
-    {
+    // TODO: Handle conditional exits from wrapped blocks that go outside
+    // the loop. This is needed for patterns like:
+    //   if (threadIdx.x < WARP_SIZE) { /* warp shuffles */ }
+    // where the false-branch exits the warp loop prematurely.
+    // Currently disabled because it also catches for/while loop conditions,
+    // breaking their body entry. Needs a way to distinguish if-guards from
+    // loop conditions.
+    if (false) {
       SmallPtrSet<BasicBlock *, 16> loop_blocks;
       loop_blocks.insert(loop_init);
       loop_blocks.insert(loop_cond);
@@ -1323,51 +1324,83 @@ void add_warp_loop(std::vector<ParallelRegion> parallel_regions,
       for (auto *bb : region.wrapped_block)
         loop_blocks.insert(bb);
 
-      // Collect redirected exits: {condition, outside_target, successor_index}
-      struct RedirectedExit {
-        BranchInst *br;
-        unsigned outside_idx;
-        BasicBlock *original_target;
-      };
-      SmallVector<RedirectedExit, 2> redirected;
-
       for (auto *bb : region.wrapped_block) {
+        if (bb == tail_block) continue;
         auto *term = bb->getTerminator();
         if (!isa<BranchInst>(term)) continue;
         auto *br = cast<BranchInst>(term);
         if (!br->isConditional()) continue;
         bool has_inside = false, has_outside = false;
+        unsigned outside_idx = 0;
+        BasicBlock *outside_target = nullptr;
+        BasicBlock *inside_target = nullptr;
         for (unsigned i = 0; i < br->getNumSuccessors(); i++) {
-          if (loop_blocks.count(br->getSuccessor(i))) has_inside = true;
-          else has_outside = true;
-        }
-        if (!has_inside || !has_outside) continue;
-        for (unsigned i = 0; i < br->getNumSuccessors(); i++) {
-          BasicBlock *succ = br->getSuccessor(i);
-          if (!loop_blocks.count(succ)) {
-            if (cupbop_debug())
-              fprintf(stderr, "[warp_loop] redirect exit: %s -> %s => loop_inc\n",
-                      bb->getName().str().c_str(), succ->getName().str().c_str());
-            redirected.push_back({br, i, succ});
-            br->setSuccessor(i, loop_inc);
+          if (loop_blocks.count(br->getSuccessor(i))) {
+            has_inside = true;
+            inside_target = br->getSuccessor(i);
+          } else {
+            has_outside = true;
+            outside_idx = i;
+            outside_target = br->getSuccessor(i);
           }
         }
-      }
+        if (!has_inside || !has_outside) continue;
+        // Skip warp loop infrastructure blocks (cond, init, inc, reset)
+        if (bb->getName().starts_with("intra_warp") ||
+            bb->getName().starts_with("inter_warp") ||
+            bb->getName().starts_with("intra_reset") ||
+            bb->getName().starts_with("inter_reset")) continue;
 
-      // For redirected exits, modify reset_block to branch to the original
-      // outside target instead of next_block. This ensures the outside code
-      // (e.g., suffix sum body) is still reachable. The outside code's own
-      // parallel regions will handle per-warp/thread selection via their
-      // saved condition arrays (cmp*_intra_warp_).
-      if (!redirected.empty()) {
-        auto &re = redirected[0];
-        // Replace reset_block's br to next_block with br to original target
-        reset_index->getTerminator()->eraseFromParent();
-        IRBuilder<> rb(reset_index);
-        rb.CreateBr(re.original_target);
-        if (cupbop_debug())
-          fprintf(stderr, "[warp_loop] reset_block -> %s (was next_block)\n",
-                  re.original_target->getName().str().c_str());
+        // Find the context array pointer from the condition's load chain:
+        // cond = load i1, ptr (gep cmp*_intra_warp_, thread_idx)
+        Value *cond = br->getCondition();
+        Value *ctx_base = nullptr;
+        Type *ctx_elem_type = nullptr;
+        if (auto *LI = dyn_cast<LoadInst>(cond)) {
+          if (auto *GEP = dyn_cast<GetElementPtrInst>(LI->getPointerOperand())) {
+            ctx_base = GEP->getPointerOperand();
+            ctx_elem_type = GEP->getSourceElementType();
+          }
+        }
+        if (!ctx_base && !intra_warp_loop) continue;  // inter_warp needs context array
+
+        if (intra_warp_loop) {
+          // INTRA_WARP: just redirect outside target to loop_inc.
+          // Each lane still evaluates the condition; true-path stays inside.
+          if (cupbop_debug())
+            fprintf(stderr, "[warp_loop] redirect exit: %s -> %s => loop_inc\n",
+                    bb->getName().str().c_str(),
+                    outside_target->getName().str().c_str());
+          br->setSuccessor(outside_idx, loop_inc);
+        } else {
+          // INTER_WARP: replace conditional with unconditional br to loop_inc,
+          // then add post-loop decision block using cond[0].
+          if (cupbop_debug())
+            fprintf(stderr, "[warp_loop] split condBr: %s -> %s (outside)\n",
+                    bb->getName().str().c_str(),
+                    outside_target->getName().str().c_str());
+
+          br->eraseFromParent();
+          IRBuilder<> bb_builder(bb);
+          bb_builder.CreateBr(loop_inc);
+
+          BasicBlock *decision = BasicBlock::Create(
+              context, "warp_loop_decision", F, next_block);
+          IRBuilder<> db(decision);
+          Value *gep0 = db.CreateConstInBoundsGEP1_32(ctx_elem_type, ctx_base, 0);
+          Value *cond0 = db.CreateLoad(ctx_elem_type, gep0, "cond_zero");
+          if (outside_idx == 0) {
+            db.CreateCondBr(cond0, outside_target, next_block);
+          } else {
+            db.CreateCondBr(cond0, next_block, outside_target);
+          }
+
+          reset_index->getTerminator()->eraseFromParent();
+          IRBuilder<> rb(reset_index);
+          rb.CreateBr(decision);
+        }
+
+        break;  // one per region
       }
     }
 
