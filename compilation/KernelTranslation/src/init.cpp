@@ -592,6 +592,9 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       for (auto &F : *M) {
         if (F.isDeclaration() || F.isIntrinsic()) continue;
         if (isKernelFunction(M, &F)) continue;
+        // Skip libdevice math functions (__nv_*) — LLVM optimization
+        // miscompiles their inlined bodies (e.g. erfcf → NaN).
+        if (F.getName().starts_with("__nv_")) continue;
         SmallVector<CallInst*, 8> calls;
         for (auto *U : F.users())
           if (auto *CI = dyn_cast<CallInst>(U))
@@ -671,6 +674,27 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
   mem_constant2global(M, fout);
   // replace __device__ variables (addrspace 1 → 0)
   mem_device2global(M, fout);
+  // Replace __nvvm_reflect() with constant 1 (FTZ enabled, CUDA default).
+  // On sm_90, clang inlines CUDA math helpers exposing __nvvm_reflect calls
+  // that query device properties at compile time. These must be resolved
+  // before the RISC-V backend sees them. FTZ=0 path contains NaN sentinels.
+  {
+    if (Function *RF = M->getFunction("__nvvm_reflect")) {
+      SmallVector<CallInst *, 8> calls;
+      for (auto *U : RF->users())
+        if (auto *CI = dyn_cast<CallInst>(U))
+          calls.push_back(CI);
+      for (auto *CI : calls) {
+        CI->replaceAllUsesWith(ConstantInt::get(Type::getInt32Ty(M->getContext()), 1));
+        CI->eraseFromParent();
+      }
+      if (RF->use_empty())
+        RF->eraseFromParent();
+      if (cupbop_debug())
+        printf("[init] replaced %zu __nvvm_reflect calls with 1\n", calls.size());
+    }
+  }
+
   // replace asm Inline
   replace_asm_call(M);
 

@@ -247,10 +247,9 @@ bool ReplaceWarpLevelPrimitive::replaceWarpShfl(Module &m) {
           if (!calledFunc)
             continue;
           auto name = calledFunc->getName().str();
-          // Match C++ wrapper calls (not NVVM intrinsics).
-          // For SCHE_0, inline_warp_level_func skips shfl inline, so
-          // C++ wrapper calls remain in the kernel body for us to replace.
-          if (!shflFuncs.count(name) && isShflCall(name))
+          // Match both C++ wrapper calls and NVVM intrinsics.
+          // On sm_90, clang inlines C++ wrappers leaving only NVVM intrinsics.
+          if (isShflCall(name))
             replace.insert(ci);
         }
       }
