@@ -60,14 +60,6 @@ void findTopK(int*__restrict__ indices_,
       float conf_scaled = __fdividef(confidence - threshold, 1.f - threshold);
       int bin_index = conf_scaled * BINS;
 
-      /* We store counts of confidence scores in the bins. Our ultimate goal is to store the indices
-       * of the `classwise_topK` confidence values in the `indices` array.
-       *
-       * We use a little trick to parallelize the process of filling up the `indices` array.
-       * We want every thread in the block to participate in the process. To do so, we want the
-       * bins array to be shifted by one place to the left. We will be computing the suffix sum
-       * of the bins array later. Details and reasons for doing so will be explained later.
-       */
       bin_index = clamp<int>(bin_index, 0, BINS - 1) - 1; // shift left by one
 
       if (bin_index >= 0)
@@ -76,6 +68,10 @@ void findTopK(int*__restrict__ indices_,
   }
 
   __syncthreads();
+
+  // DEBUG: histogram snapshot to count[2]
+  if (blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0)
+    count_[2] = bins[0];
 
   constexpr int WARP_SIZE = 32; /* must be equal to warpSize */
 
@@ -142,6 +138,10 @@ void findTopK(int*__restrict__ indices_,
       previous_group_first_element = __shfl_sync(0xFFFFFFFF, value, 0);
     }
   }
+
+  // DEBUG: scan snapshot — write to indices[38] (within bounds, won't be overwritten)
+  if (blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0)
+    indices_[38] = bins[0];
 
   if (threadIdx.x == 0) *count = 0;
 
@@ -276,6 +276,10 @@ int main(int argc, char* argv[])
   cudaMemcpy(count, d_count, count_size_bytes, cudaMemcpyDeviceToHost);
 
   reference<float, 2048>(indices_ref, count_ref, scores, threshold, classwise_topK, batch_size, num_classes, num_priors);
+
+  printf("[dbg] hist=%d scan=%d final_count=%d ref=%d idx0=%d ref0=%d\n",
+         count[2], indices[38], count[0], count_ref[0], indices[0], indices_ref[0]);
+  fflush(stdout);
 
   unsigned checksum = 0; 
   for (int b = 0; b < batch_size; b++) {
