@@ -1308,6 +1308,69 @@ void add_warp_loop(std::vector<ParallelRegion> parallel_regions,
     builder.CreateBr(next_block);
     loop_cond->getTerminator()->replaceUsesOfWith(next_block, reset_index);
 
+    // Redirect conditional exits from wrapped blocks that go outside the loop.
+    // When a conditional branch has one target inside the loop and one outside,
+    // the outside exit breaks the warp loop. We redirect the outside target to
+    // loop_inc, and after the loop completes (in reset_block), we add a
+    // conditional branch to the original outside target based on the condition
+    // evaluated by thread 0 / warp 0.
+    {
+      SmallPtrSet<BasicBlock *, 16> loop_blocks;
+      loop_blocks.insert(loop_init);
+      loop_blocks.insert(loop_cond);
+      loop_blocks.insert(loop_inc);
+      loop_blocks.insert(reset_index);
+      for (auto *bb : region.wrapped_block)
+        loop_blocks.insert(bb);
+
+      // Collect redirected exits: {condition, outside_target, successor_index}
+      struct RedirectedExit {
+        BranchInst *br;
+        unsigned outside_idx;
+        BasicBlock *original_target;
+      };
+      SmallVector<RedirectedExit, 2> redirected;
+
+      for (auto *bb : region.wrapped_block) {
+        auto *term = bb->getTerminator();
+        if (!isa<BranchInst>(term)) continue;
+        auto *br = cast<BranchInst>(term);
+        if (!br->isConditional()) continue;
+        bool has_inside = false, has_outside = false;
+        for (unsigned i = 0; i < br->getNumSuccessors(); i++) {
+          if (loop_blocks.count(br->getSuccessor(i))) has_inside = true;
+          else has_outside = true;
+        }
+        if (!has_inside || !has_outside) continue;
+        for (unsigned i = 0; i < br->getNumSuccessors(); i++) {
+          BasicBlock *succ = br->getSuccessor(i);
+          if (!loop_blocks.count(succ)) {
+            if (cupbop_debug())
+              fprintf(stderr, "[warp_loop] redirect exit: %s -> %s => loop_inc\n",
+                      bb->getName().str().c_str(), succ->getName().str().c_str());
+            redirected.push_back({br, i, succ});
+            br->setSuccessor(i, loop_inc);
+          }
+        }
+      }
+
+      // For redirected exits, modify reset_block to branch to the original
+      // outside target instead of next_block. This ensures the outside code
+      // (e.g., suffix sum body) is still reachable. The outside code's own
+      // parallel regions will handle per-warp/thread selection via their
+      // saved condition arrays (cmp*_intra_warp_).
+      if (!redirected.empty()) {
+        auto &re = redirected[0];
+        // Replace reset_block's br to next_block with br to original target
+        reset_index->getTerminator()->eraseFromParent();
+        IRBuilder<> rb(reset_index);
+        rb.CreateBr(re.original_target);
+        if (cupbop_debug())
+          fprintf(stderr, "[warp_loop] reset_block -> %s (was next_block)\n",
+                  re.original_target->getName().str().c_str());
+      }
+    }
+
     // add metadata
     MDNode *Dummy =
         MDNode::getTemporary(context, ArrayRef<Metadata *>()).release();
@@ -1315,7 +1378,13 @@ void add_warp_loop(std::vector<ParallelRegion> parallel_regions,
     MDNode *ParallelAccessMD = MDNode::get(
         context,
         {MDString::get(context, "llvm.loop.parallel_accesses"), AccessGroupMD});
-    MDNode *Root = MDNode::get(context, {Dummy, ParallelAccessMD});
+    // Prevent LLVM loop optimizations (unswitching, rotation) from
+    // transforming conditional exits into backedge phis that reset the
+    // warp index to 0, creating infinite loops.
+    MDNode *DisableTransformMD = MDNode::get(
+        context,
+        {MDString::get(context, "llvm.loop.disable_nonforced")});
+    MDNode *Root = MDNode::get(context, {Dummy, ParallelAccessMD, DisableTransformMD});
 
     Root->replaceOperandWith(0, Root);
     MDNode::deleteTemporary(Dummy);
