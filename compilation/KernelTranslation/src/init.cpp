@@ -648,11 +648,10 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
         break;
     }
   }
-  // Re-run remove_cuda_built_in to replace any new threadIdx/blockDim
-  // NVVM intrinsics exposed by the helper inlining above.
-  remove_cuda_built_in(M);
 
   // Force-unroll loops containing shfl calls (SCHE_0 only).
+  // Must happen BEFORE replaceWarpShflFlat inserts barriers.
+  // At this point shfl calls are still CUDA intrinsics (no barrier0 yet).
   // shfl barrier splits break for-loop control flow in warp loop.
   // Use LLVM pass pipeline instead of direct UnrollLoop API.
   if (sched == 0) {
@@ -714,14 +713,23 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       PB.registerLoopAnalyses(LAM);
       PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-      // O1 pipeline unrolls pragma-annotated loops.
-      // May be aggressive for complex kernels — consider fallback.
-      auto MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
+      // Run only LoopUnroll (with required LoopSimplify+LCSSA), not full O1.
+      // O1 is too aggressive — restructures barriers, promotes allocas.
+      llvm::FunctionPassManager FPM;
+      FPM.addPass(llvm::LoopSimplifyPass());
+      FPM.addPass(llvm::LCSSAPass());
+      FPM.addPass(llvm::LoopUnrollPass());
+      llvm::ModulePassManager MPM;
+      MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
       MPM.run(*M, MAM);
       if (cupbop_debug())
-        fprintf(stderr, "[init] ran O1 pipeline for shfl loop unroll\n");
+        fprintf(stderr, "[init] ran loop unroll pass for shfl loops\n");
     }
   }
+
+  // Re-run remove_cuda_built_in to replace any new threadIdx/blockDim
+  // NVVM intrinsics exposed by the helper inlining above.
+  remove_cuda_built_in(M);
 
   // create global variable for warp and vote
   create_global_variable(M);
