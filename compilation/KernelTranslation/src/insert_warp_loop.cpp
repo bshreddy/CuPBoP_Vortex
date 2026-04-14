@@ -252,6 +252,8 @@ struct ParallelRegion {
 std::map<llvm::Instruction *, unsigned> tempInstructionIds;
 std::map<std::string, llvm::Instruction *> contextArrays;
 int tempInstructionIndex = 0;
+static int g_schedule_flag = 2;
+static int g_ctx_pool_offset = 0;
 int need_nested_loop;
 
 // adding multiple kenerl in file support
@@ -367,15 +369,32 @@ llvm::Instruction *GetContextArray(llvm::Instruction *instruction,
     }
   }
   */
-  llvm::Value *ItemSize = nullptr;
-  llvm::AllocaInst *Alloca = nullptr;
+  llvm::Instruction *Result = nullptr;
 
-  auto block_size_addr = M->getGlobalVariable("block_size");
-  auto block_size = createLoad(builder, block_size_addr);
-  Alloca = builder.CreateAlloca(AllocType, block_size, varName);
+  if (g_schedule_flag == 0) {
+    // SCHE_0: use context pool (cudaMalloc'd, writable, no BSS memset).
+    constexpr int MAX_BLK = 1024;
+    int elemSize = Layout.getTypeAllocSize(AllocType);
+    int elemOffset = g_ctx_pool_offset / elemSize;
 
-  contextArrays[varName] = Alloca;
-  return Alloca;
+    auto *PoolPtr = M->getGlobalVariable("__ctx_pool");
+    auto *PoolLoad = builder.CreateLoad(
+        PointerType::getUnqual(C), PoolPtr, "__ctx_pool_ld");
+    cast<LoadInst>(PoolLoad)->setVolatile(true);
+    Result = dyn_cast<Instruction>(builder.CreateGEP(
+        AllocType, PoolLoad,
+        ConstantInt::get(Type::getInt64Ty(C), elemOffset),
+        varName + "_base"));
+    g_ctx_pool_offset += MAX_BLK * elemSize;
+  } else {
+    // SCHE_2: stack alloca
+    auto block_size_addr = M->getGlobalVariable("block_size");
+    auto block_size = createLoad(builder, block_size_addr);
+    Result = builder.CreateAlloca(AllocType, block_size, varName);
+  }
+
+  contextArrays[varName] = Result;
+  return Result;
 }
 
 // save the local variable into replicated array
@@ -1835,6 +1854,7 @@ public:
     // clear context array, temp variables for new kernel function
     contextArrays.clear();
     tempInstructionIds.clear();
+    g_schedule_flag = schedule_flag;
     tempInstructionIndex = 0;
 
 

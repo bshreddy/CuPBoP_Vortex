@@ -882,6 +882,39 @@ cudaError_t cudaLaunchKernel_vortex(
   }
 
 
+  // Allocate context pool and set __ctx_pool pointer
+  {
+    static uint64_t ctx_pool_addr = 0;
+    if (!ctx_pool_addr) {
+      void *p = nullptr;
+      cudaMalloc(&p, 512 * 1024);  // 512KB pool
+      ctx_pool_addr = (uint64_t)p;
+      DBG_PRINT("ctx_pool: 0x%lx\n", ctx_pool_addr);
+    }
+    // Find __ctx_pool symbol address in ELF
+    std::fstream sf("lookup_global_symbols.txt", std::ios::in);
+    std::string sa, st, sn;
+    while (sf >> sa >> st) {
+      std::getline(sf, sn);
+      if (!sn.empty() && sn[0] == ' ') sn = sn.substr(1);
+      if (sn == "__ctx_pool") {
+        uint64_t sym = std::stoull(sa, nullptr, 16);
+        MemcpySymbolEntry e;
+        e.dst_addr = sym;
+        e.size = sizeof(uint64_t);
+        e.data.resize(sizeof(uint64_t));
+        memcpy(e.data.data(), &ctx_pool_addr, sizeof(uint64_t));
+        bool found = false;
+        for (auto &x : memcpy_symbol) {
+          if (x.dst_addr == sym) { x = std::move(e); found = true; break; }
+        }
+        if (!found) memcpy_symbol.push_back(std::move(e));
+        break;
+      }
+    }
+    sf.close();
+  }
+
   // allocate staging buffer for kernel arguments
   size_t abuf_size = sizeof(kernel_arg_t) + ((num_args > 1) ? (sizeof(uint64_t) * (num_args - 1)) : 0);
   DBG_PRINT("(debug) abuf_size = %ld\n", abuf_size);

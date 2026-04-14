@@ -368,6 +368,13 @@ void create_global_variable(llvm::Module *M) {
       *M, I32, false, llvm::GlobalValue::ExternalLinkage, NULL,
       "vote_count", NULL, llvm::GlobalValue::GeneralDynamicTLSModel, 0, false);
   vote_count->setDSOLocal(true);
+
+  // Context pool pointer — set by host via cudaMalloc + cudaMemcpyToSymbol
+  auto PtrTy = PointerType::getUnqual(M->getContext());
+  auto ctx_pool = new llvm::GlobalVariable(
+      *M, PtrTy, false, llvm::GlobalValue::ExternalLinkage, NULL,
+      "__ctx_pool", NULL, llvm::GlobalValue::NotThreadLocal, 0, false);
+  ctx_pool->setDSOLocal(true);
 }
 
 void remove_metadata(llvm::Module *M) {
