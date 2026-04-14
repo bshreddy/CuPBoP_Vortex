@@ -649,6 +649,23 @@ void replace_built_in_function(llvm::Module *M) {
               }
               Call->replaceAllUsesWith(grid_size);
               need_remove.push_back(Call);
+            } else if (func_name == "llvm.nvvm.read.ptx.sreg.warp.sz") {
+              // warpSize = 32. Also propagate through alloca store→load chains
+              // so loop trip count is visible to LoopUnroll.
+              auto *C32 = ConstantInt::get(Type::getInt32Ty(context), 32);
+              for (auto *U : Call->users()) {
+                if (auto *SI = dyn_cast<StoreInst>(U)) {
+                  auto *Ptr = SI->getPointerOperand();
+                  for (auto *PU : Ptr->users()) {
+                    if (auto *LI = dyn_cast<LoadInst>(PU)) {
+                      LI->replaceAllUsesWith(C32);
+                      need_remove.push_back(LI);
+                    }
+                  }
+                }
+              }
+              Call->replaceAllUsesWith(C32);
+              need_remove.push_back(Call);
             } else if (func_name == "llvm.nvvm.barrier0") {
               if (schedule == 2) {
                 IRBuilder<> builder(context);

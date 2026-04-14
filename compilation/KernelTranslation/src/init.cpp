@@ -27,6 +27,10 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/Transforms/Scalar/LoopUnrollPass.h"
+#include "llvm/Transforms/Scalar/SCCP.h"
+#include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Utils/LoopSimplify.h"
 #include "llvm/Transforms/Utils/LCSSA.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -650,6 +654,9 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
   }
 
   // Force-unroll loops containing shfl calls (SCHE_0 only).
+  // Replace warpSize with 32 so loop trip count is known for unroll.
+  remove_cuda_built_in(M);
+
   // Must happen BEFORE replaceWarpShflFlat inserts barriers.
   // At this point shfl calls are still CUDA intrinsics (no barrier0 yet).
   // shfl barrier splits break for-loop control flow in warp loop.
@@ -713,12 +720,40 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       PB.registerLoopAnalyses(LAM);
       PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-      // O1 folds warpSize→32 and unrolls pragma-annotated loops.
-      // insert_sync null checks handle any unreachable blocks O1 creates.
-      auto MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
-      MPM.run(*M, MAM);
+      // Minimal passes to unroll shfl loops:
+      // 1. SCCP: fold warpSize→32 so trip count is known
+      // 2. InstCombine + SimplifyCFG: clean up after SCCP
+      // 3. LoopSimplify + LCSSA + LoopUnroll: unroll the loop
+      // Avoids O1's aggressive transforms that break CuPBoP assumptions.
+      // O1 function pipeline on shfl-containing functions only.
+      // O1 promotes allocas (SROA), folds warpSize→32, unrolls loops.
+      // Non-shfl functions are untouched (avoids breaking CuPBoP assumptions).
+      auto FPM = PB.buildFunctionSimplificationPipeline(
+          llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None);
+
+      for (auto &F : *M) {
+        if (F.isDeclaration()) continue;
+        bool func_has_shfl = false;
+        for (auto &BB : F) {
+          for (auto &I : BB) {
+            if (auto *CI = dyn_cast<CallInst>(&I)) {
+              if (CI->getCalledFunction()) {
+                auto name = CI->getCalledFunction()->getName();
+                if (name.contains("shfl") || name.contains("nvvm.shfl"))
+                  func_has_shfl = true;
+              }
+            }
+          }
+        }
+        if (func_has_shfl) {
+          FPM.run(F, FAM);
+          if (cupbop_debug())
+            fprintf(stderr, "[init] O1 unroll on %s\n",
+                    F.getName().str().c_str());
+        }
+      }
       if (cupbop_debug())
-        fprintf(stderr, "[init] ran O1 pipeline for shfl loop unroll\n");
+        fprintf(stderr, "[init] ran selective unroll passes for shfl loops\n");
     }
   }
 
