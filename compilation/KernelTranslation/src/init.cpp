@@ -27,6 +27,8 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/Transforms/Scalar/LoopUnrollPass.h"
+#include "llvm/Transforms/Utils/LoopSimplify.h"
+#include "llvm/Transforms/Utils/LCSSA.h"
 #include "llvm/Passes/PassBuilder.h"
 
 //extern void initializeInstrumentation(PassRegistry&);
@@ -712,6 +714,8 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       PB.registerLoopAnalyses(LAM);
       PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
+      // O1 pipeline unrolls pragma-annotated loops.
+      // May be aggressive for complex kernels — consider fallback.
       auto MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
       MPM.run(*M, MAM);
       if (cupbop_debug())
