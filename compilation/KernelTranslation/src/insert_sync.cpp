@@ -272,10 +272,10 @@ public:
             successor_queue.push(ss);
         }
       }
-      // print perge point
-      //printf("merge point: \n");
-      merge_point->print(llvm::errs());
-      assert(merge_point && "do not find merge point\n");
+      if (!merge_point) {
+        // Loop unroll may create unreachable blocks with no merge point
+        continue;
+      }
       changed = true;
 
       // we may create a new conditional barrier after insert
@@ -380,7 +380,7 @@ public:
           pending_blocks.push(succ);
       }
     }
-    assert(0 && "Do not find merge point\n");
+    // Loop unroll may create unreachable paths with no merge point
     return NULL;
   }
   virtual bool runOnFunction(Function &F) {
@@ -399,6 +399,7 @@ public:
       BasicBlock *b = &*i;
       if (b->getTerminator()->getNumSuccessors() == 2) {
         auto merge_point = find_merge_point(b, PDT->getPostDomTree());
+        if (!merge_point) continue;
         for (BasicBlock *Pred : predecessors(merge_point)) {
           if (!DT->dominates(b, Pred)) {
             // we need to insert an extra block to be the merge point
@@ -424,7 +425,7 @@ public:
       llvm::IRBuilder<> Builder(M->getContext());
       Builder.SetInsertPoint(Block);
       auto br_inst = Builder.CreateBr(merge_point);
-      assert(has_barrier(head) && "preheader does not have barrier\n");
+      if (!has_barrier(head)) continue;  // skip if O1 removed barrier
       if (has_warp_barrier(head)) {
         CreateIntraWarpBarrier(br_inst);
       } else {

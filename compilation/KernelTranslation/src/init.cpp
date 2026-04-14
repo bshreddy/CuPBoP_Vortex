@@ -713,17 +713,12 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       PB.registerLoopAnalyses(LAM);
       PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-      // Run only LoopUnroll (with required LoopSimplify+LCSSA), not full O1.
-      // O1 is too aggressive — restructures barriers, promotes allocas.
-      llvm::FunctionPassManager FPM;
-      FPM.addPass(llvm::LoopSimplifyPass());
-      FPM.addPass(llvm::LCSSAPass());
-      FPM.addPass(llvm::LoopUnrollPass());
-      llvm::ModulePassManager MPM;
-      MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+      // O1 folds warpSize→32 and unrolls pragma-annotated loops.
+      // insert_sync null checks handle any unreachable blocks O1 creates.
+      auto MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
       MPM.run(*M, MAM);
       if (cupbop_debug())
-        fprintf(stderr, "[init] ran loop unroll pass for shfl loops\n");
+        fprintf(stderr, "[init] ran O1 pipeline for shfl loop unroll\n");
     }
   }
 
