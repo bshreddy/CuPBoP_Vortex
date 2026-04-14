@@ -379,12 +379,11 @@ void create_kernel_wrapper_function(llvm::Module *M){
             "int __thread warp_shfl[32] = {0};\n"
             "char __thread warp_vote[32] = {0};\n"
             "int __thread vote_count = 0;\n"
-            "\n"
-            "char *__ctx_pool = 0;\n"
             "\n";
     }
 
-    ss << "int dyn_shared_mem_size;\n\n";
+    ss << "char *__ctx_pool = 0;\n"
+          "int dyn_shared_mem_size;\n\n";
 
     // __device__ variables are preserved across kernel launches by the host
     // runtime (cudaRuntimeImpl.cpp) using the cudaMemcpyToSymbol mechanism.
@@ -493,9 +492,7 @@ void create_kernel_wrapper_function(llvm::Module *M){
           "        memcpy(dst_addr, src_data, size);\n"
           "        size_t data_slots = (size + sizeof(uint64_t) - 1) / sizeof(uint64_t);\n"
           "        slot += 2 + data_slots;\n"
-          "    }\n"
-          "    vx_printf(\"CHECK: __ctx_pool = 0x%lx\\n\", (uint64_t)__ctx_pool);\n"
-          "}\n"
+          "    }}\n"
 
 
           //      "    auto additional_info = (uint64_t*)KERNEL_ARG_ADDITIONAL_INFO_BASE_ADDR; \n"
