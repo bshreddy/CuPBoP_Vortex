@@ -23,12 +23,11 @@
 //#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
-#include "llvm/Transforms/Utils/UnrollLoop.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Analysis/ScalarEvolution.h"
-#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/Transforms/Scalar/LoopUnrollPass.h"
+#include "llvm/Passes/PassBuilder.h"
 
 //extern void initializeInstrumentation(PassRegistry&);
 
@@ -653,18 +652,18 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
 
   // Force-unroll loops containing shfl calls (SCHE_0 only).
   // shfl barrier splits break for-loop control flow in warp loop.
-  // Must unroll before replaceWarpShflFlat inserts barriers.
+  // Use LLVM pass pipeline instead of direct UnrollLoop API.
   if (sched == 0) {
+    // First, add llvm.loop.unroll.full metadata to shfl-containing loops
+    bool added_unroll_md = false;
     for (auto &F : *M) {
       if (F.isDeclaration()) continue;
       if (!isKernelFunction(M, &F)) continue;
 
       llvm::DominatorTree DT(F);
       llvm::LoopInfo LI(DT);
-      llvm::AssumptionCache AC(F);
 
-      SmallVector<llvm::Loop *, 4> loops(LI.begin(), LI.end());
-      for (auto *L : loops) {
+      for (auto *L : LI) {
         bool has_shfl = false;
         for (auto *BB : L->getBlocks()) {
           for (auto &I : *BB) {
@@ -679,23 +678,44 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
         }
         if (!has_shfl) continue;
 
-        // warpSize/2 loop: 16,8,4,2,1 = 5 iterations.
-        // Use large count to ensure full unroll.
-        llvm::UnrollLoopOptions ULO;
-        ULO.Count = 32;
-        ULO.Force = true;
-        ULO.AllowExpensiveTripCount = true;
-        ULO.UnrollRemainder = true;
+        // Add llvm.loop.unroll.full metadata to force unroll
+        auto &Ctx = M->getContext();
+        MDNode *Dummy = MDNode::getTemporary(Ctx, {}).release();
+        MDNode *UnrollMD = MDNode::get(Ctx,
+            {MDString::get(Ctx, "llvm.loop.unroll.full")});
+        MDNode *Root = MDNode::get(Ctx, {Dummy, UnrollMD});
+        Root->replaceOperandWith(0, Root);
+        MDNode::deleteTemporary(Dummy);
 
-        llvm::TargetTransformInfo TTI(M->getDataLayout());
-        auto result = llvm::UnrollLoop(L, ULO, &LI, nullptr, &DT, &AC,
-                                        &TTI, nullptr, true);
-        if (cupbop_debug())
-          fprintf(stderr, "[init] unroll shfl loop in %s: %s\n",
-                  F.getName().str().c_str(),
-                  result == llvm::LoopUnrollResult::FullyUnrolled ? "FULL" :
-                  result == llvm::LoopUnrollResult::PartiallyUnrolled ? "PARTIAL" : "NONE");
+        // Set on loop latch terminator
+        if (auto *Latch = L->getLoopLatch()) {
+          Latch->getTerminator()->setMetadata("llvm.loop", Root);
+          added_unroll_md = true;
+          if (cupbop_debug())
+            fprintf(stderr, "[init] added unroll.full to shfl loop in %s\n",
+                    F.getName().str().c_str());
+        }
       }
+    }
+
+    // Run O1 pipeline to unroll loops with #pragma unroll metadata.
+    // -O0 BC ignores pragma; O1 processes llvm.loop.unroll.* hints.
+    if (added_unroll_md) {
+      llvm::PassBuilder PB;
+      llvm::LoopAnalysisManager LAM;
+      llvm::FunctionAnalysisManager FAM;
+      llvm::CGSCCAnalysisManager CGAM;
+      llvm::ModuleAnalysisManager MAM;
+      PB.registerModuleAnalyses(MAM);
+      PB.registerCGSCCAnalyses(CGAM);
+      PB.registerFunctionAnalyses(FAM);
+      PB.registerLoopAnalyses(LAM);
+      PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+      auto MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O1);
+      MPM.run(*M, MAM);
+      if (cupbop_debug())
+        fprintf(stderr, "[init] ran O1 pipeline for shfl loop unroll\n");
     }
   }
 
