@@ -371,8 +371,8 @@ llvm::Instruction *GetContextArray(llvm::Instruction *instruction,
   */
   llvm::Instruction *Result = nullptr;
 
-  if (g_schedule_flag == 0) {
-    // SCHE_0: use context pool (cudaMalloc'd, writable, no BSS memset).
+  if (g_schedule_flag == 0 && need_nested_loop) {
+    // SCHE_0 with shfl: use context pool to avoid stack overflow.
     constexpr int MAX_BLK = 1024;
     int elemSize = Layout.getTypeAllocSize(AllocType);
     int elemOffset = g_ctx_pool_offset / elemSize;
