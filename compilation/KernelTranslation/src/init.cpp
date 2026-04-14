@@ -226,7 +226,9 @@ void create_global_variable(llvm::Module *M) {
   auto zero = llvm::ConstantInt::get(I32, 0, true);
 
   // we need global variable used for warp shuffle
-  llvm::Type *WarpArrayType = llvm::ArrayType::get(I32, 32);
+  // 1024 entries: indexed by inter_warp_idx*32 + intra_warp_idx
+  // to isolate warp shuffle data across inter_warp loop iterations.
+  llvm::Type *WarpArrayType = llvm::ArrayType::get(I32, 1024);
   llvm::Type *VoteArrayType = llvm::ArrayType::get(I8, 32);
 
   int schedule = 0;

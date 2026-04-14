@@ -379,11 +379,12 @@ llvm::Instruction *GetContextArray(llvm::Instruction *instruction,
     int elemSize = Layout.getTypeAllocSize(AllocType);
     int elemOffset = g_ctx_pool_offset / elemSize;
 
+    // Single volatile load per call — O3 will CSE them into one.
+    // volatile prevents elimination but allows CSE of same-address loads.
     auto *PoolPtr = M->getGlobalVariable("__ctx_pool");
-    auto *PoolLoad = builder.CreateLoad(
+    auto *CachedLoad = builder.CreateLoad(
         PointerType::getUnqual(C), PoolPtr, "__ctx_pool_ld");
-    cast<LoadInst>(PoolLoad)->setVolatile(true);
-    auto *CachedLoad = PoolLoad;
+    cast<LoadInst>(CachedLoad)->setVolatile(true);
 
     Result = dyn_cast<Instruction>(builder.CreateGEP(
         AllocType, CachedLoad,

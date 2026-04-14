@@ -353,11 +353,17 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
 
     auto intra_warp_index =
         createLoad(builder, m.getGlobalVariable("intra_warp_index"));
+    auto inter_warp_index =
+        createLoad(builder, m.getGlobalVariable("inter_warp_index"));
+    // Index by inter*32 + intra to isolate warps in warp_shfl[1024]
+    auto store_idx = builder.CreateAdd(intra_warp_index,
+        builder.CreateMul(inter_warp_index, ConstantInt::get(I32, 32)),
+        "shfl_store_idx");
     Value *val_to_store = shfl_variable;
     if (isFloat)
         val_to_store = builder.CreateBitCast(val_to_store, I32);
     auto store_gep = builder.CreateGEP(warp_shfl_ptr->getValueType(),
-                                        warp_shfl_ptr, {C0, intra_warp_index});
+                                        warp_shfl_ptr, {C0, store_idx});
     builder.CreateStore(val_to_store, store_gep);
 
     // Use a custom "shfl_barrier" marker instead of barrier0.
@@ -374,21 +380,28 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     auto safe_offset = builder.CreateLoad(I32, offset_alloca, "shfl_off_ld");
     auto new_intra_warp_index =
         createLoad(builder, m.getGlobalVariable("intra_warp_index"));
+    auto new_inter_warp_index =
+        createLoad(builder, m.getGlobalVariable("inter_warp_index"));
 
-    Value *load_index;
+    // Compute lane-level index within warp (0..31)
+    Value *lane_index;
     if (shfl_name.find("down") != shfl_name.npos) {
       auto calc = builder.CreateAdd(new_intra_warp_index, safe_offset);
-      load_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
+      lane_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
     } else if (shfl_name.find("up") != shfl_name.npos) {
       auto calc = builder.CreateSub(new_intra_warp_index, safe_offset);
-      load_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
+      lane_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
     } else if (shfl_name.find("bfly") != shfl_name.npos ||
                shfl_name.find("xor") != shfl_name.npos) {
       auto calc = builder.CreateXor(new_intra_warp_index, safe_offset);
-      load_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
+      lane_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
     } else {
-      load_index = builder.CreateSRem(safe_offset, ConstantInt::get(I32, 32));
+      lane_index = builder.CreateSRem(safe_offset, ConstantInt::get(I32, 32));
     }
+    // Add inter_warp offset: warp_shfl[inter*32 + lane]
+    auto load_index = builder.CreateAdd(lane_index,
+        builder.CreateMul(new_inter_warp_index, ConstantInt::get(I32, 32)),
+        "shfl_load_idx");
 
     auto gep = builder.CreateGEP(warp_shfl_ptr->getValueType(), warp_shfl_ptr,
                                   {C0, load_index});
