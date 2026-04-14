@@ -687,11 +687,14 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
         }
         if (!has_shfl) continue;
 
-        // Add llvm.loop.unroll.full metadata to force unroll
+        // Add llvm.loop.unroll.count=32 to force unroll with explicit count.
+        // "full" requires SE to compute trip count; explicit count does not.
         auto &Ctx = M->getContext();
         MDNode *Dummy = MDNode::getTemporary(Ctx, {}).release();
+        auto *I32Ty = Type::getInt32Ty(Ctx);
         MDNode *UnrollMD = MDNode::get(Ctx,
-            {MDString::get(Ctx, "llvm.loop.unroll.full")});
+            {MDString::get(Ctx, "llvm.loop.unroll.count"),
+             ConstantAsMetadata::get(ConstantInt::get(I32Ty, 32))});
         MDNode *Root = MDNode::get(Ctx, {Dummy, UnrollMD});
         Root->replaceOperandWith(0, Root);
         MDNode::deleteTemporary(Dummy);
