@@ -373,6 +373,8 @@ llvm::Instruction *GetContextArray(llvm::Instruction *instruction,
 
   if (g_schedule_flag == 0 && need_nested_loop) {
     // SCHE_0 with shfl: use context pool to avoid stack overflow.
+    // Load pool pointer once (volatile to prevent O3 from folding/eliminating),
+    // then store to a stack alloca so subsequent uses are fast stack reads.
     constexpr int MAX_BLK = 1024;
     int elemSize = Layout.getTypeAllocSize(AllocType);
     int elemOffset = g_ctx_pool_offset / elemSize;
@@ -381,8 +383,10 @@ llvm::Instruction *GetContextArray(llvm::Instruction *instruction,
     auto *PoolLoad = builder.CreateLoad(
         PointerType::getUnqual(C), PoolPtr, "__ctx_pool_ld");
     cast<LoadInst>(PoolLoad)->setVolatile(true);
+    auto *CachedLoad = PoolLoad;
+
     Result = dyn_cast<Instruction>(builder.CreateGEP(
-        AllocType, PoolLoad,
+        AllocType, CachedLoad,
         ConstantInt::get(Type::getInt64Ty(C), elemOffset),
         varName + "_base"));
     g_ctx_pool_offset += MAX_BLK * elemSize;
