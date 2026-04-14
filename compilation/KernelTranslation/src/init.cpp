@@ -29,6 +29,7 @@
 #include "llvm/Transforms/Scalar/LoopUnrollPass.h"
 #include "llvm/Transforms/Scalar/SCCP.h"
 #include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Utils/LoopSimplify.h"
@@ -725,14 +726,19 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       // 2. InstCombine + SimplifyCFG: clean up after SCCP
       // 3. LoopSimplify + LCSSA + LoopUnroll: unroll the loop
       // Avoids O1's aggressive transforms that break CuPBoP assumptions.
-      // O1 function pipeline on shfl-containing functions only.
-      // O1 promotes allocas (SROA), folds warpSize→32, unrolls loops.
-      // Non-shfl functions are untouched (avoids breaking CuPBoP assumptions).
-      auto FPM = PB.buildFunctionSimplificationPipeline(
-          llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None);
+      // Lightweight passes: mem2reg (alloca→SSA) + InstCombine (fold 32) + unroll.
+      // Much faster than O1 which runs dozens of passes.
+      llvm::FunctionPassManager FPM;
+      FPM.addPass(llvm::PromotePass());       // mem2reg: alloca → SSA
+      FPM.addPass(llvm::InstCombinePass());   // fold warpSize/2 → 16, etc.
+      FPM.addPass(llvm::SimplifyCFGPass());
+      FPM.addPass(llvm::LoopSimplifyPass());
+      FPM.addPass(llvm::LCSSAPass());
+      FPM.addPass(llvm::LoopUnrollPass());
 
       for (auto &F : *M) {
         if (F.isDeclaration()) continue;
+        // Apply to kernel functions and any function containing shfl
         bool func_has_shfl = false;
         for (auto &BB : F) {
           for (auto &I : BB) {
