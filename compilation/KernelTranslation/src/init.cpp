@@ -23,6 +23,12 @@
 //#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
+#include "llvm/Transforms/Utils/UnrollLoop.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/IR/Dominators.h"
 
 //extern void initializeInstrumentation(PassRegistry&);
 
@@ -644,6 +650,55 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
   // Re-run remove_cuda_built_in to replace any new threadIdx/blockDim
   // NVVM intrinsics exposed by the helper inlining above.
   remove_cuda_built_in(M);
+
+  // Force-unroll loops containing shfl calls (SCHE_0 only).
+  // shfl barrier splits break for-loop control flow in warp loop.
+  // Must unroll before replaceWarpShflFlat inserts barriers.
+  if (sched == 0) {
+    for (auto &F : *M) {
+      if (F.isDeclaration()) continue;
+      if (!isKernelFunction(M, &F)) continue;
+
+      llvm::DominatorTree DT(F);
+      llvm::LoopInfo LI(DT);
+      llvm::AssumptionCache AC(F);
+
+      SmallVector<llvm::Loop *, 4> loops(LI.begin(), LI.end());
+      for (auto *L : loops) {
+        bool has_shfl = false;
+        for (auto *BB : L->getBlocks()) {
+          for (auto &I : *BB) {
+            if (auto *CI = dyn_cast<CallInst>(&I)) {
+              if (CI->getCalledFunction()) {
+                auto name = CI->getCalledFunction()->getName();
+                if (name.contains("shfl") || name.contains("nvvm.shfl"))
+                  has_shfl = true;
+              }
+            }
+          }
+        }
+        if (!has_shfl) continue;
+
+        // warpSize/2 loop: 16,8,4,2,1 = 5 iterations.
+        // Use large count to ensure full unroll.
+        llvm::UnrollLoopOptions ULO;
+        ULO.Count = 32;
+        ULO.Force = true;
+        ULO.AllowExpensiveTripCount = true;
+        ULO.UnrollRemainder = true;
+
+        llvm::TargetTransformInfo TTI(M->getDataLayout());
+        auto result = llvm::UnrollLoop(L, ULO, &LI, nullptr, &DT, &AC,
+                                        &TTI, nullptr, true);
+        if (cupbop_debug())
+          fprintf(stderr, "[init] unroll shfl loop in %s: %s\n",
+                  F.getName().str().c_str(),
+                  result == llvm::LoopUnrollResult::FullyUnrolled ? "FULL" :
+                  result == llvm::LoopUnrollResult::PartiallyUnrolled ? "PARTIAL" : "NONE");
+      }
+    }
+  }
+
   // create global variable for warp and vote
   create_global_variable(M);
   // replace phi with data load
