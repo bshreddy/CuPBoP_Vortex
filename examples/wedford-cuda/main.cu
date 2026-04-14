@@ -98,6 +98,14 @@ __global__ void welford_kernel(
 
   welford_reduce_mean_m2n<accscalar_t>(s_mem_ac, s_mem, x_mean, m_2_n, count, block_size, thread_id);
 
+  // Debug: reinterpret_cast count as float to store in output
+  if (blockIdx.x == 0 && thread_id == 0) {
+    int c = count;
+    float fc;
+    __builtin_memcpy(&fc, &c, sizeof(float));  // bit-cast int→float
+    out_mean[1] = fc;
+    out_var_biased[1] = static_cast<outscalar_t>(m_2_n);
+  }
   if (thread_id == 0) {
     out_mean[blockIdx.x] = static_cast<outscalar_t>(x_mean);
     out_var_biased[blockIdx.x] = static_cast<outscalar_t>(m_2_n/count);
@@ -173,6 +181,9 @@ int main(int argc, char* argv[])
     }
   }
   printf("%s\n", ok ? "PASSED!" : "FAILED!");
+  int dbg_count;
+  __builtin_memcpy(&dbg_count, &mean[1], sizeof(int));
+  printf("DBG: count=%d m2n=%f\n", dbg_count, var[1]);
 
   cudaFree(d_input);
   cudaFree(d_mean);

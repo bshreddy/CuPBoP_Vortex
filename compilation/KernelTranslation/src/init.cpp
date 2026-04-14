@@ -729,11 +729,11 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       // 2. InstCombine + SimplifyCFG: clean up after SCCP
       // 3. LoopSimplify + LCSSA + LoopUnroll: unroll the loop
       // Avoids O1's aggressive transforms that break CuPBoP assumptions.
-      // Lightweight passes: mem2reg (alloca→SSA) + InstCombine (fold 32) + unroll.
-      // Much faster than O1 which runs dozens of passes.
+      // mem2reg promotes alloca → SSA (needed for trip count), then unroll.
+      // Note: mem2reg on kernel may cause count/mean aliasing in wedford.
       llvm::FunctionPassManager FPM;
-      FPM.addPass(llvm::PromotePass());       // mem2reg: alloca → SSA
-      FPM.addPass(llvm::InstCombinePass());   // fold warpSize/2 → 16, etc.
+      FPM.addPass(llvm::PromotePass());
+      FPM.addPass(llvm::InstCombinePass());
       FPM.addPass(llvm::SimplifyCFGPass());
       FPM.addPass(llvm::LoopSimplifyPass());
       FPM.addPass(llvm::LCSSAPass());
@@ -741,7 +741,7 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
 
       for (auto &F : *M) {
         if (F.isDeclaration()) continue;
-        // Apply to kernel functions and any function containing shfl
+        if (!isKernelFunction(M, &F)) continue;
         bool func_has_shfl = false;
         for (auto &BB : F) {
           for (auto &I : BB) {
