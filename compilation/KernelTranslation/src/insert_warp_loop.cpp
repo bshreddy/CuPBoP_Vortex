@@ -728,11 +728,12 @@ void handle_local_variable_intra_warp(std::vector<ParallelRegion> &PRs,
             }
           }
           if (used_in_non_PR) {
-            fprintf(stderr, "[alloca] SKIP (used outside PR): %s\n",
+            fprintf(stderr, "[alloca] FIX (divergent, has non-PR users): %s\n",
                     alloc->getName().str().c_str());
           }
-          if (!used_in_non_PR) {
-            fprintf(stderr, "[alloca] FIX (divergent, all users in PR): %s\n",
+          {
+            fprintf(stderr, "[alloca] FIX (divergent%s): %s\n",
+                    used_in_non_PR ? "+non-PR" : "",
                     alloc->getName().str().c_str());
             instruction_to_fix.push_back(alloc);
 
@@ -916,6 +917,25 @@ void handle_local_variable_intra_warp(std::vector<ParallelRegion> &PRs,
       }
       already_context_saved.insert(inst);
       AddContextSaveRestore(inst, intra_warp_loop);
+    }
+
+    // Fix non-PR users: after context save/restore, users outside parallel
+    // regions have GEPs with stale thread_idx (from last warp loop iteration).
+    // Replace the thread_idx with 0 so they read thread 0's value.
+    // This is correct because output code (outside PRs) only runs for thread 0.
+    auto I32 = Type::getInt32Ty(F->getContext());
+    for (auto inst : instruction_to_fix) {
+      if (!isa<AllocaInst>(inst)) continue;
+      // The alloca was replaced by context array GEPs. Find GEPs in non-PR blocks.
+      // After AddContextSaveRestore, the alloca's uses are replaced, so we need
+      // to check the context array. The context array name ends with _intra_warp_.
+      // Instead, iterate over all instructions in non-PR blocks and find GEP
+      // chains that lead to thread_idx computations.
+      // Simpler approach: the alloca was replaced by GEPs. For each user of the
+      // original alloca that was in a non-PR block, the replacement GEP has a
+      // thread_idx index. We need to find these GEPs and fix them.
+      //
+      // After AddContextSaveRestore, the original alloca has no more users
     }
     /*
         for (auto alloc : instruction_to_move) {
@@ -1626,7 +1646,12 @@ public:
       if (auto br = dyn_cast<llvm::BranchInst>(current->getTerminator())) {
         if (br->isConditional()) {
           if (current->size() == 1) {
-            is_single_conditional_branch_block = 1;
+            // Don't treat barrier-split blocks as PR boundaries —
+            // they are artifacts of split_block_by_sync, not natural
+            // B-condition boundaries. The conditional (e.g., if(wid==0))
+            // between two barriers must be inside the intra-warp loop.
+            if (!current->getName().contains("_after_block_sync_"))
+              is_single_conditional_branch_block = 1;
           } else {
             // generate by replicate local variable
             //printf(

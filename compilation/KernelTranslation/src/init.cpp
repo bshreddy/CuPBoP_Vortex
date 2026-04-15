@@ -28,12 +28,11 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/Transforms/Scalar/LoopUnrollPass.h"
 #include "llvm/Transforms/Scalar/SCCP.h"
-#include "llvm/Transforms/Scalar/SROA.h"
-#include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Utils/LoopSimplify.h"
 #include "llvm/Transforms/Utils/LCSSA.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
 #include "llvm/Passes/PassBuilder.h"
 
 //extern void initializeInstrumentation(PassRegistry&);
@@ -672,7 +671,28 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       llvm::DominatorTree DT(F);
       llvm::LoopInfo LI(DT);
 
+      if (cupbop_debug())
+        fprintf(stderr, "[init] kernel %s: %u top-level loops\n",
+                F.getName().str().c_str(),
+                (unsigned)std::distance(LI.begin(), LI.end()));
+
+      // Collect all loops including subloops
+      SmallVector<Loop *, 8> AllLoops;
       for (auto *L : LI) {
+        SmallVector<Loop *, 4> worklist;
+        worklist.push_back(L);
+        while (!worklist.empty()) {
+          auto *CL = worklist.pop_back_val();
+          AllLoops.push_back(CL);
+          for (auto *SL : CL->getSubLoops())
+            worklist.push_back(SL);
+        }
+      }
+      if (cupbop_debug())
+        fprintf(stderr, "[init]   total loops (including sub): %u\n",
+                (unsigned)AllLoops.size());
+
+      for (auto *L : AllLoops) {
         bool has_shfl = false;
         for (auto *BB : L->getBlocks()) {
           for (auto &I : *BB) {
@@ -725,12 +745,8 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
       // Minimal passes to unroll shfl loops:
-      // 1. SCCP: fold warpSize→32 so trip count is known
-      // 2. InstCombine + SimplifyCFG: clean up after SCCP
-      // 3. LoopSimplify + LCSSA + LoopUnroll: unroll the loop
-      // Avoids O1's aggressive transforms that break CuPBoP assumptions.
-      // mem2reg promotes alloca → SSA (needed for trip count), then unroll.
-      // Note: mem2reg on kernel may cause count/mean aliasing in wedford.
+      // mem2reg promotes alloca→SSA so LoopUnroll can compute trip count
+      // and loop rotation works correctly (while→do-while for exact 5 copies).
       llvm::FunctionPassManager FPM;
       FPM.addPass(llvm::PromotePass());
       FPM.addPass(llvm::InstCombinePass());
