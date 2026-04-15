@@ -25,6 +25,7 @@
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/Transforms/Scalar/LoopUnrollPass.h"
 #include "llvm/Transforms/Scalar/SCCP.h"
@@ -652,49 +653,6 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
     }
   }
 
-  // For SCHE_0: insert cupbop.shfl.barrier after each __syncthreads() in
-  // kernel functions. This creates intra-warp PR boundaries so that
-  // inter-warp exchange code (e.g., if(wid==0) val=smem[lane]) after
-  // syncthreads gets wrapped in its own intra-warp loop. Without this,
-  // getParallelRegionBefore stops at the single conditional branch block
-  // (from split_block_by_sync) and the exchange code runs once instead
-  // of per-thread.
-  // Insert cupbop.shfl.barrier after every barrier0 in ALL functions
-  // (not just kernel — device functions may contain barrier0 from
-  // inline_shfl_helpers or original CUDA __syncthreads).
-  if (sched == 0) {
-    SmallVector<Instruction *, 8> all_sync_calls;
-    for (auto &F : *M) {
-      if (F.isDeclaration()) continue;
-      for (auto &BB : F) {
-        for (auto &I : BB) {
-          if (auto *CI = dyn_cast<CallInst>(&I)) {
-            if (CI->isInlineAsm() || !CI->getCalledFunction()) continue;
-            auto name = CI->getCalledFunction()->getName().str();
-            if (name == "llvm.nvvm.barrier0" || name == "llvm.nvvm.barrier.sync")
-              all_sync_calls.push_back(CI);
-          }
-        }
-      }
-    }
-    if (!all_sync_calls.empty()) {
-      auto &Ctx = M->getContext();
-      auto FT = FunctionType::get(Type::getVoidTy(Ctx), {}, false);
-      auto callee = M->getOrInsertFunction("cupbop.shfl.barrier", FT);
-      for (auto *CI : all_sync_calls) {
-        auto *next = CI->getNextNode();
-        if (next) {
-          IRBuilder<> builder(next);
-          builder.CreateCall(callee);
-          if (cupbop_debug())
-            fprintf(stderr, "[init] shfl.barrier after barrier0 in %s::%s\n",
-                    CI->getFunction()->getName().str().c_str(),
-                    CI->getParent()->getName().str().c_str());
-        }
-      }
-    }
-  }
-
   // Force-unroll loops containing shfl calls (SCHE_0 only).
   // Replace warpSize with 32 so loop trip count is known for unroll.
   remove_cuda_built_in(M);
@@ -832,6 +790,51 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
   create_global_variable(M);
   // replace phi with data load
   phi2alloc(M);
+
+  // For SCHE_0: insert cupbop.shfl.barrier after each barrier0 and at
+  // conditional merge points. Must run AFTER phi2alloc so that the barrier
+  // is placed before phi2alloc's loads (not after them).
+  if (sched == 0) {
+    for (auto &F : *M) {
+      if (!isKernelFunction(M, &F)) continue;
+      SmallVector<CallInst *, 8> sync_calls;
+      for (auto &BB : F) {
+        for (auto &I : BB) {
+          if (auto *CI = dyn_cast<CallInst>(&I)) {
+            if (CI->isInlineAsm() || !CI->getCalledFunction()) continue;
+            auto name = CI->getCalledFunction()->getName().str();
+            if (name == "llvm.nvvm.barrier0" || name == "llvm.nvvm.barrier.sync")
+              sync_calls.push_back(CI);
+          }
+        }
+      }
+      if (!sync_calls.empty()) {
+        auto &Ctx = M->getContext();
+        auto FT = FunctionType::get(Type::getVoidTy(Ctx), {}, false);
+        auto callee = M->getOrInsertFunction("cupbop.shfl.barrier", FT);
+        for (auto *CI : sync_calls) {
+          // shfl_barrier after each barrier0
+          auto *next = CI->getNextNode();
+          if (next) {
+            IRBuilder<> builder(next);
+            builder.CreateCall(callee);
+          }
+          // Also at conditional merge: FALSE successor of barrier0 BB's branch
+          BasicBlock *syncBB = CI->getParent();
+          auto *term = syncBB->getTerminator();
+          if (auto *br = dyn_cast<BranchInst>(term)) {
+            if (br->isConditional()) {
+              BasicBlock *mergeBB = br->getSuccessor(1);
+              if (mergeBB && mergeBB != syncBB) {
+                IRBuilder<> mergeBuilder(&*mergeBB->begin());
+                mergeBuilder.CreateCall(callee);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 
   // replace share memory
   int schedule = 0;
