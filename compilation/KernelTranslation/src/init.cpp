@@ -819,7 +819,9 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
             IRBuilder<> builder(next);
             builder.CreateCall(callee);
           }
-          // Also at conditional merge: FALSE successor of barrier0 BB's branch
+          // Insert barrier at the exchange merge (FALSE successor of
+          // syncthreads conditional). This creates a PR boundary so
+          // the exchange code is in its own intra-warp PR.
           BasicBlock *syncBB = CI->getParent();
           auto *term = syncBB->getTerminator();
           if (auto *br = dyn_cast<BranchInst>(term)) {

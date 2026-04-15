@@ -1656,29 +1656,7 @@ public:
         if (region_entry_barrier == NULL)
           region_entry_barrier = current;
         else if (region_entry_barrier != current) {
-          // Two different entry barriers found. Remove the blocks that
-          // are reachable from the second entry but not the first.
-          // This trims the PR to only include blocks between the first
-          // entry barrier and the exit, excluding merge blocks that
-          // also have external predecessors (skip paths).
-          fprintf(stderr, "[PR]   → multi-entry: trimming blocks from %s\n",
-                  current->getName().str().c_str());
-          // Remove blocks reachable from second entry only
-          SmallVector<BasicBlock *, 4> to_remove;
-          for (auto *bb : current_region.wrapped_block) {
-            bool reachable_from_first = false;
-            for (auto *pred : predecessors(bb)) {
-              if (pred == region_entry_barrier ||
-                  current_region.wrapped_block.count(pred))
-                reachable_from_first = true;
-            }
-            if (!reachable_from_first)
-              to_remove.push_back(bb);
-          }
-          for (auto *bb : to_remove) {
-            current_region.wrapped_block.erase(bb);
-            fprintf(stderr, "[PR]   → removed: %s\n", bb->getName().str().c_str());
-          }
+          return;
         }
         continue;
       }

@@ -18,6 +18,10 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/InitializePasses.h"
+#include "llvm/PassInfo.h"
+#include "llvm/PassRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 #include <stdlib.h>
 
@@ -113,6 +117,16 @@ int main(int argc, char **argv) {
   dumpFile(program, "7_after_perf_opt.ll");
 
   VerifyModule(program);
+
+  // Run LoopSimplify to ensure all loops have preheaders.
+  // Multi-entry PRs can create warp loops with side entries that
+  // bypass the preheader, causing VortexBranchDivergence to crash.
+  {
+    llvm::legacy::PassManager Passes;
+    const PassInfo *PI = PassRegistry::getPassRegistry()->getPassInfo(StringRef("loop-simplify"));
+    if (PI) Passes.add(PI->createPass());
+    Passes.run(*program);
+  }
 
   DumpModule(program, argv[2]);
 
