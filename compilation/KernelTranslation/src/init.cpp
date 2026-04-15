@@ -602,6 +602,29 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
     if (!inline_func_with_tid(M))
       break;
   }
+
+  // Inline helper functions that transitively call shfl into kernel functions.
+  // Must run BEFORE the general inline loop so that inline_shfl_helpers can
+  // insert barrier0 after the inlined code. If the general inline loop runs
+  // first, it inlines shfl-containing functions without adding barriers,
+  // and the inter-warp exchange code won't get its own parallel region.
+  int sched = 0;
+  if (char *env = std::getenv("VORTEX_SCHEDULE_FLAG"))
+    sched = std::stoi(std::string(env));
+  if (sched == 0) {
+    while (1) {
+      if (!inline_shfl_helpers(M))
+        break;
+    }
+    // Re-run inline_func_with_tid after inline_shfl_helpers, because the
+    // inlined helper code may contain threadIdx wrapper calls (__fetch_builtin_xEv)
+    // that need to be inlined so tool.cpp can replace them with intra_warp_index.
+    while (1) {
+      if (!inline_func_with_tid(M))
+        break;
+    }
+  }
+
   // Inline ALL remaining device functions (e.g. __float2half, __half2float)
   // that aren't covered by inline_func_with_tid. Without inlining, these
   // functions remain as external calls that have no implementation on Vortex.
@@ -612,10 +635,6 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       for (auto &F : *M) {
         if (F.isDeclaration() || F.isIntrinsic()) continue;
         if (isKernelFunction(M, &F)) continue;
-        // Skip libdevice math functions (__nv_*) — LLVM optimization
-        // miscompiles their inlined bodies (e.g. erfcf → NaN).
-        // Skip Vortex runtime functions (__vx_*) — LLVM eliminates their
-        // inlined bodies (DXA, barrier) as side-effect-free.
         if (F.getName().starts_with("__nv_")) continue;
         if (F.getName().contains("__vx_")) continue;
         SmallVector<CallInst*, 8> calls;
@@ -633,23 +652,46 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
     }
   }
 
-  // Inline helper functions that transitively call shfl into kernel functions.
-  // Only needed for SCHE_0 (FLAT mode) where shfl is emulated via warp_shfl array.
-  // For SCHE_2, shfl wrappers are replaced in-place by replaceWarpShfl1to1.
-  int sched = 0;
-  if (char *env = std::getenv("VORTEX_SCHEDULE_FLAG"))
-    sched = std::stoi(std::string(env));
+  // For SCHE_0: insert cupbop.shfl.barrier after each __syncthreads() in
+  // kernel functions. This creates intra-warp PR boundaries so that
+  // inter-warp exchange code (e.g., if(wid==0) val=smem[lane]) after
+  // syncthreads gets wrapped in its own intra-warp loop. Without this,
+  // getParallelRegionBefore stops at the single conditional branch block
+  // (from split_block_by_sync) and the exchange code runs once instead
+  // of per-thread.
+  // Insert cupbop.shfl.barrier after every barrier0 in ALL functions
+  // (not just kernel — device functions may contain barrier0 from
+  // inline_shfl_helpers or original CUDA __syncthreads).
   if (sched == 0) {
-    while (1) {
-      if (!inline_shfl_helpers(M))
-        break;
+    SmallVector<Instruction *, 8> all_sync_calls;
+    for (auto &F : *M) {
+      if (F.isDeclaration()) continue;
+      for (auto &BB : F) {
+        for (auto &I : BB) {
+          if (auto *CI = dyn_cast<CallInst>(&I)) {
+            if (CI->isInlineAsm() || !CI->getCalledFunction()) continue;
+            auto name = CI->getCalledFunction()->getName().str();
+            if (name == "llvm.nvvm.barrier0" || name == "llvm.nvvm.barrier.sync")
+              all_sync_calls.push_back(CI);
+          }
+        }
+      }
     }
-    // Re-run inline_func_with_tid after inline_shfl_helpers, because the
-    // inlined helper code may contain threadIdx wrapper calls (__fetch_builtin_xEv)
-    // that need to be inlined so tool.cpp can replace them with intra_warp_index.
-    while (1) {
-      if (!inline_func_with_tid(M))
-        break;
+    if (!all_sync_calls.empty()) {
+      auto &Ctx = M->getContext();
+      auto FT = FunctionType::get(Type::getVoidTy(Ctx), {}, false);
+      auto callee = M->getOrInsertFunction("cupbop.shfl.barrier", FT);
+      for (auto *CI : all_sync_calls) {
+        auto *next = CI->getNextNode();
+        if (next) {
+          IRBuilder<> builder(next);
+          builder.CreateCall(callee);
+          if (cupbop_debug())
+            fprintf(stderr, "[init] shfl.barrier after barrier0 in %s::%s\n",
+                    CI->getFunction()->getName().str().c_str(),
+                    CI->getParent()->getName().str().c_str());
+        }
+      }
     }
   }
 

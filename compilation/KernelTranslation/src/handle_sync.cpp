@@ -49,9 +49,14 @@ void split_block_by_sync(llvm::Function *F) {
           }
           sync_inst.insert(Call);
           // we should also sync the next instruction
-          // so that we can get a block with sync inst only
+          // so that we can get a block with sync inst only.
+          // But skip if next instruction is a terminator (br) —
+          // splitting there creates a size-1 block with just a branch,
+          // which getParallelRegionBefore misidentifies as a B-condition
+          // boundary, excluding inter-warp exchange code from PRs.
           Instruction *next_inst = &(*std::next(i));
-          sync_inst.insert(next_inst);
+          if (!next_inst->isTerminator())
+            sync_inst.insert(next_inst);
         }
       }
     }

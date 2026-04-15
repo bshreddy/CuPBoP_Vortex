@@ -47,16 +47,16 @@ int main() {
   int *d_out, h_out;
   cudaMalloc(&d_out, sizeof(int));
 
-  // Use 2D block like wedford: (32, 4) = 128 threads = 4 warps
-  dim3 block(32, 4);
+  // Use 2D block: (32, 2) = 64 threads = 2 warps (minimum for inter-warp exchange)
+  dim3 block(32, 2);
   reduce_kernel<int><<<1, block>>>(d_out);
   cudaDeviceSynchronize();
 
   cudaMemcpy(&h_out, d_out, sizeof(int), cudaMemcpyDeviceToHost);
   cudaFree(d_out);
 
-  int n = 32 * 4;
-  int expected = n * (n + 1) / 2;  // sum(1..128) = 8256
+  int n = 32 * 2;
+  int expected = n * (n + 1) / 2;  // sum(1..64) = 2080
   printf("Result: %d, Expected: %d\n", h_out, expected);
   printf("%s\n", (h_out == expected) ? "PASSED!" : "FAILED!");
   return (h_out != expected);

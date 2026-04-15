@@ -75,6 +75,12 @@ lookup_global_symbols.txt
 ci_output.txt
 ci_status_*.txt
 Perf_counter_*.txt
+sche0_dbg*.txt
+debug_output*.txt*
+dxa_descriptors.txt
+trace/
+ramulator.stats.log
+run_build.sh
 
 # Other CUDA header files
 cuda-header.tar.gz
