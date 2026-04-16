@@ -843,10 +843,8 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
                 IRBuilder<> bbBuilder(barrierBB);
                 bbBuilder.CreateCall(callee);
                 bbBuilder.CreateBr(mergeBB);
-                // Also insert barrier at mergeBB start (BEFORE the phi2alloc load).
-                // phi2alloc already ran, so no phi nodes — begin() gives first load.
-                IRBuilder<> mergeBuilder(&*mergeBB->begin());
-                mergeBuilder.CreateCall(callee);
+                // No barrier at mergeBB — barrier approaches don't work
+                // because if.end10.i has multi-entry (exchange + skip paths).
                 // Redirect: syncBB's FALSE goes to barrierBB
                 br->setSuccessor(1, barrierBB);
                 // Redirect exchange-path predecessors to barrierBB
