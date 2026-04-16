@@ -789,10 +789,12 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
   // create global variable for warp and vote
   create_global_variable(M);
 
+  // replace phi with data load
+  phi2alloc(M);
+
   // For SCHE_0: insert cupbop.shfl.barrier after each barrier0 and at
-  // conditional merge points. Must run BEFORE phi2alloc so that
-  // BreakPHIToAllocas can place loads AFTER the barrier (not before).
-  // BreakPHIToAllocas skips barrier calls when placing the load.
+  // conditional merge points. Must run AFTER phi2alloc so we can insert
+  // barrier BEFORE phi2alloc's loads (phi nodes are already converted).
   if (sched == 0) {
     for (auto &F : *M) {
       if (!isKernelFunction(M, &F)) continue;
@@ -835,33 +837,28 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
                   has_exchange_pred = true;
               }
               if (mergeBB && mergeBB != syncBB && has_exchange_pred) {
-                // Clone mergeBB for exchange path. Exchange path goes
-                // through barrier + cloned merge, skip path keeps original.
-                // This ensures val.2→val.4 copy runs per-thread in warp loop.
-                ValueToValueMapTy VMap;
-                BasicBlock *clonedMerge = CloneBasicBlock(
-                    mergeBB, VMap, "_xchg",
-                    CI->getFunction());
-                // Remap instructions in cloned block
-                for (auto &I : *clonedMerge) {
-                  RemapInstruction(&I, VMap,
-                      RF_NoModuleLevelChanges | RF_IgnoreMissingLocals);
-                }
-                // Insert barrier at start of cloned merge
-                IRBuilder<> bbBuilder(&*clonedMerge->getFirstInsertionPt());
+                BasicBlock *barrierBB = BasicBlock::Create(
+                    Ctx, mergeBB->getName().str() + "_xchg_barrier",
+                    CI->getFunction(), mergeBB);
+                IRBuilder<> bbBuilder(barrierBB);
                 bbBuilder.CreateCall(callee);
-                // Redirect: syncBB's FALSE goes to clonedMerge
-                br->setSuccessor(1, clonedMerge);
-                // Redirect exchange-path predecessors to clonedMerge
+                bbBuilder.CreateBr(mergeBB);
+                // Also insert barrier at mergeBB start (BEFORE the phi2alloc load).
+                // phi2alloc already ran, so no phi nodes — begin() gives first load.
+                IRBuilder<> mergeBuilder(&*mergeBB->begin());
+                mergeBuilder.CreateCall(callee);
+                // Redirect: syncBB's FALSE goes to barrierBB
+                br->setSuccessor(1, barrierBB);
+                // Redirect exchange-path predecessors to barrierBB
                 SmallVector<BasicBlock *, 4> exchange_preds;
                 for (auto *pred : predecessors(mergeBB)) {
-                  if (pred == clonedMerge) continue;
+                  if (pred == barrierBB) continue;
                   if (pred->getName().starts_with("if.then") ||
                       pred->getName().starts_with("cond."))
                     exchange_preds.push_back(pred);
                 }
                 for (auto *pred : exchange_preds)
-                  pred->getTerminator()->replaceUsesOfWith(mergeBB, clonedMerge);
+                  pred->getTerminator()->replaceUsesOfWith(mergeBB, barrierBB);
               }
             }
           }
@@ -870,8 +867,8 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
     }
   }
 
-  // replace phi with data load (AFTER barrier insertion)
-  phi2alloc(M);
+  // DEBUG: dump IR before phi2alloc
+  // phi2alloc already called above (before barrier insertion)
 
   // replace share memory
   int schedule = 0;
