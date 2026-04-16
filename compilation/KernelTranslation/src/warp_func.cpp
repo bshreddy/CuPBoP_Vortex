@@ -321,27 +321,6 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
   GlobalVariable *warp_shfl_ptr = m.getNamedGlobal("warp_shfl");
   fprintf(stderr, "[FLAT] replaceWarpShflFlat called, %zu to replace, warp_shfl_ptr=%p\n",
           replace.size(), (void*)warp_shfl_ptr);
-
-  // Resize warp_shfl to hold N×1024 slots (one 1024-slot bank per shfl).
-  // This prevents WAR hazards when O3 merges consecutive shfl warp loops:
-  // each shfl stores to warp_shfl[shfl_id*1024 + inter*32 + intra] so
-  // one shfl's store cannot overwrite another's unread values.
-  if (!replace.empty() && warp_shfl_ptr) {
-    size_t n = replace.size();
-    auto *newTy = ArrayType::get(I32, n * 1024);
-    auto *newGV = new GlobalVariable(
-        m, newTy, false, warp_shfl_ptr->getLinkage(),
-        ConstantAggregateZero::get(newTy), "",
-        warp_shfl_ptr, warp_shfl_ptr->getThreadLocalMode(),
-        warp_shfl_ptr->getAddressSpace());
-    newGV->takeName(warp_shfl_ptr);
-    warp_shfl_ptr->replaceAllUsesWith(newGV);
-    warp_shfl_ptr->eraseFromParent();
-    warp_shfl_ptr = newGV;
-    fprintf(stderr, "[FLAT] resized warp_shfl to %zu x 1024 = %zu slots\n", n, n*1024);
-  }
-
-  int shfl_id = 0;
   for (auto shfl_inst : replace) {
     fprintf(stderr, "[FLAT] processing shfl in %s\n",
             shfl_inst->getParent()->getParent()->getName().str().c_str());
@@ -392,14 +371,10 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
         createLoad(builder, m.getGlobalVariable("intra_warp_index"));
     auto inter_warp_index =
         createLoad(builder, m.getGlobalVariable("inter_warp_index"));
-    // Index by shfl_id*1024 + inter*32 + intra.
-    // Each shfl gets its own 1024-slot bank to avoid WAR hazards
-    // when O3 merges consecutive shfl warp loops.
-    auto base_offset = ConstantInt::get(I32, shfl_id * 1024);
-    auto store_idx = builder.CreateAdd(
-        builder.CreateAdd(intra_warp_index,
-            builder.CreateMul(inter_warp_index, ConstantInt::get(I32, 32))),
-        base_offset, "shfl_store_idx");
+    // Index by inter*32 + intra to isolate warps in warp_shfl[1024]
+    auto store_idx = builder.CreateAdd(intra_warp_index,
+        builder.CreateMul(inter_warp_index, ConstantInt::get(I32, 32)),
+        "shfl_store_idx");
     Value *val_to_store = shfl_variable;
     if (isFloat)
         val_to_store = builder.CreateBitCast(val_to_store, I32);
@@ -463,11 +438,10 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     } else {
       lane_index = builder.CreateSRem(safe_offset, ConstantInt::get(I32, 32));
     }
-    // Add inter_warp and shfl_id offsets: warp_shfl[shfl_id*1024 + inter*32 + lane]
-    auto load_index = builder.CreateAdd(
-        builder.CreateAdd(lane_index,
-            builder.CreateMul(new_inter_warp_index, ConstantInt::get(I32, 32))),
-        base_offset, "shfl_load_idx");
+    // Add inter_warp offset: warp_shfl[inter*32 + lane]
+    auto load_index = builder.CreateAdd(lane_index,
+        builder.CreateMul(new_inter_warp_index, ConstantInt::get(I32, 32)),
+        "shfl_load_idx");
 
     auto gep = builder.CreateGEP(warp_shfl_ptr->getValueType(), warp_shfl_ptr,
                                   {C0, load_index});
@@ -499,7 +473,6 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
       user->replaceUsesOfWith(shfl_inst, res_load);
     }
     shfl_inst->eraseFromParent();
-    shfl_id++;
   }
 }
 
