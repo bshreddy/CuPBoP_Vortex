@@ -835,24 +835,33 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
                   has_exchange_pred = true;
               }
               if (mergeBB && mergeBB != syncBB && has_exchange_pred) {
-                BasicBlock *barrierBB = BasicBlock::Create(
-                    Ctx, mergeBB->getName().str() + "_xchg_barrier",
-                    CI->getFunction(), mergeBB);
-                IRBuilder<> bbBuilder(barrierBB);
+                // Clone mergeBB for exchange path. Exchange path goes
+                // through barrier + cloned merge, skip path keeps original.
+                // This ensures val.2→val.4 copy runs per-thread in warp loop.
+                ValueToValueMapTy VMap;
+                BasicBlock *clonedMerge = CloneBasicBlock(
+                    mergeBB, VMap, "_xchg",
+                    CI->getFunction());
+                // Remap instructions in cloned block
+                for (auto &I : *clonedMerge) {
+                  RemapInstruction(&I, VMap,
+                      RF_NoModuleLevelChanges | RF_IgnoreMissingLocals);
+                }
+                // Insert barrier at start of cloned merge
+                IRBuilder<> bbBuilder(&*clonedMerge->getFirstInsertionPt());
                 bbBuilder.CreateCall(callee);
-                bbBuilder.CreateBr(mergeBB);
-                // Redirect: syncBB's FALSE goes to barrierBB
-                br->setSuccessor(1, barrierBB);
-                // Redirect exchange-path predecessors to barrierBB
+                // Redirect: syncBB's FALSE goes to clonedMerge
+                br->setSuccessor(1, clonedMerge);
+                // Redirect exchange-path predecessors to clonedMerge
                 SmallVector<BasicBlock *, 4> exchange_preds;
                 for (auto *pred : predecessors(mergeBB)) {
-                  if (pred == barrierBB) continue;
+                  if (pred == clonedMerge) continue;
                   if (pred->getName().starts_with("if.then") ||
                       pred->getName().starts_with("cond."))
                     exchange_preds.push_back(pred);
                 }
                 for (auto *pred : exchange_preds)
-                  pred->getTerminator()->replaceUsesOfWith(mergeBB, barrierBB);
+                  pred->getTerminator()->replaceUsesOfWith(mergeBB, clonedMerge);
               }
             }
           }
