@@ -29,6 +29,8 @@ public:
   /// @brief replace warp level primitives
   PreservedAnalyses run(Module &M, ModuleAnalysisManager&);
 
+  bool replaceWarpShfl(Module &m);
+
 private:
   /// @brief replace warp vote
   /// @param m the module where the instructions will be replaced
@@ -45,9 +47,6 @@ private:
   /// @param m the module where the instructions will be replaced
   /// @param replace the call instructions to be replaced
   void replaceWarpVoteX86(Module &m, const set<CallInst *> &replace);
-  /// @brief replace warp shuffle
-  /// @param m the module where the instructions will be replaced
-  bool replaceWarpShfl(Module &m);
   /// @brief replace warp shuffle for flat mappping
   /// @param m the module where the instructions will be replaced
   /// @param replace the call instructions to be replaced

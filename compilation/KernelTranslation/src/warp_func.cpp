@@ -5,6 +5,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -351,6 +352,21 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     // Store offset before barrier
     builder.CreateStore(shfl_offset, offset_alloca);
 
+    // Split BEFORE the store: separates this shfl's store from the
+    // PREVIOUS shfl's read+combine. Without this, the store and the
+    // previous read are in the same warp loop, and the store
+    // overwrites warp_shfl[tid] before all threads finish reading,
+    // causing a race condition in sequential (SCHE_0) execution.
+    {
+      auto *insertBB = builder.GetInsertBlock();
+      auto *insertPt = &*builder.GetInsertPoint();
+      if (insertPt != &*insertBB->begin()) {
+        auto *newBB = insertBB->splitBasicBlock(
+            insertPt, insertBB->getName().str() + "_shfl_store");
+        builder.SetInsertPoint(&*newBB->begin());
+      }
+    }
+
     auto intra_warp_index =
         createLoad(builder, m.getGlobalVariable("intra_warp_index"));
     auto inter_warp_index =
@@ -366,15 +382,30 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
                                         warp_shfl_ptr, {C0, store_idx});
     builder.CreateStore(val_to_store, store_gep);
 
-    // Use a custom "shfl_barrier" marker instead of barrier0.
-    // barrier0 triggers split_block_by_sync which breaks if-guard structure.
-    // shfl_barrier is handled by insert_warp_loop as a parallel region
-    // boundary but NOT by split_block_by_sync.
+    // shfl_barrier separates the store from the read.
+    // Manually split the block so the store and read are in
+    // separate basic blocks. This creates a proper PR boundary:
+    // the store gets its own PR (wrapped in a warp loop for
+    // per-thread warp_shfl initialization), and the read gets
+    // a separate PR.
+    CallInst *shfl_call;
     {
       auto FT = FunctionType::get(Type::getVoidTy(m.getContext()), {}, false);
       auto callee = m.getOrInsertFunction("cupbop.shfl.barrier", FT);
-      builder.CreateCall(callee);
+      shfl_call = builder.CreateCall(callee);
     }
+    // Split block: store → | shfl_barrier → read
+    auto *storeBlock = shfl_call->getParent();
+    auto *barrierBlock = storeBlock->splitBasicBlock(
+        shfl_call, storeBlock->getName().str() + "_shfl_barrier");
+    // Split again: shfl_barrier → | read
+    auto *nextAfterBarrier = shfl_call->getNextNode();
+    if (nextAfterBarrier && !nextAfterBarrier->isTerminator()) {
+      barrierBlock->splitBasicBlock(
+          nextAfterBarrier, storeBlock->getName().str() + "_shfl_read");
+    }
+    // Reset builder to the read block
+    builder.SetInsertPoint(nextAfterBarrier);
 
     // After barrier: load offset from alloca (survives BB split)
     auto safe_offset = builder.CreateLoad(I32, offset_alloca, "shfl_off_ld");

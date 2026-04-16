@@ -1303,6 +1303,12 @@ void add_warp_loop(std::vector<ParallelRegion> parallel_regions,
     // std::string::npos)
     //  continue;
 
+    fprintf(stderr, "[warp_loop] %s: start=%s, end=%s, next=%s\n",
+            intra_warp_loop ? "INTRA" : "INTER",
+            start_block ? start_block->getName().str().c_str() : "NULL",
+            tail_block ? tail_block->getName().str().c_str() : "NULL",
+            next_block ? next_block->getName().str().c_str() : "NULL");
+
     auto loop_cond = insert_loop_cond(start_block, next_block, intra_warp_loop);
     auto loop_init = insert_loop_init(loop_cond, intra_warp_loop);
 

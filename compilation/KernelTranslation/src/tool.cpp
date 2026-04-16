@@ -1,4 +1,6 @@
 #include "tool.h"
+#include "warp_func.h"
+#include "flag.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/IR/Constants.h"
@@ -332,6 +334,17 @@ void replace_dynamic_shared_memory(llvm::Module *M) {
       return Instr != new_bit_cast && Instr != load_shared_memory;
     });
   }
+}
+
+void replace_warp_shfl_early(llvm::Module *M) {
+  int schedule = 0;
+  if (char *env = std::getenv("VORTEX_SCHEDULE_FLAG"))
+    schedule = std::stoi(std::string(env));
+  if (schedule != 0) return; // Only FLAT mode needs early shfl replacement
+
+  using namespace cupbop;
+  ReplaceWarpLevelPrimitive rw(MAPPING_FLAT);
+  rw.replaceWarpShfl(*M);
 }
 
 void replace_built_in_function(llvm::Module *M) {

@@ -91,6 +91,17 @@ int main(int argc, char **argv) {
   split_block_by_sync(program);
   dumpFile(program, "2_after_split_sync.ll");
 
+  // For SCHE_0: replace shfl intrinsics with warp_shfl store/barrier/read
+  // BEFORE warp loop creation. This ensures the initial store to warp_shfl
+  // is inside a PR and gets wrapped in a warp loop for per-thread access.
+  // If done after insert_warp_loop, O3 hoists the store out of the loop
+  // and constant-folds the thread index to 0.
+  DBG_LOG("replace_warp_shfl_early\n");
+  replace_warp_shfl_early(program);
+  // Re-run split_block_by_sync for barriers added by shfl replacement
+  split_block_by_sync(program);
+  dumpFile(program, "2b_after_shfl_replace.ll");
+
   DBG_LOG("insert_warp_loop\n");
   insert_warp_loop(program);
   dumpFile(program, "3_after_warp_loop.ll");

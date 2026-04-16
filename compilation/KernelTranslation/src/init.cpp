@@ -843,23 +843,84 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
                 IRBuilder<> bbBuilder(barrierBB);
                 bbBuilder.CreateCall(callee);
                 bbBuilder.CreateBr(mergeBB);
-                // No barrier at mergeBB — barrier approaches don't work
-                // because if.end10.i has multi-entry (exchange + skip paths).
-                // Redirect: syncBB's FALSE goes to barrierBB
-                br->setSuccessor(1, barrierBB);
-                // Redirect exchange-path predecessors to barrierBB
+                // Three-barrier structure:
+                // exchange preds → xchg_barrier → common_barrier → mergeBB
+                // skip preds → skip_barrier → common_barrier → mergeBB
+                //
+                // xchg_barrier: clean single-path entry for exchange PR
+                // skip_barrier: clean single-path entry for skip path
+                // common_barrier: single entry for mergeBB's PR (warp loop)
+
+                // Create common barrier (between xchg/skip and mergeBB)
+                BasicBlock *commonBB = BasicBlock::Create(
+                    Ctx, mergeBB->getName().str() + "_common_barrier",
+                    CI->getFunction(), mergeBB);
+                {
+                  IRBuilder<> cb(commonBB);
+                  cb.CreateCall(callee);
+                  cb.CreateBr(mergeBB);
+                }
+
+                // xchg_barrier → common_barrier (not directly to mergeBB)
+                barrierBB->getTerminator()->replaceUsesOfWith(mergeBB, commonBB);
+
+                // Collect and redirect preds
                 SmallVector<BasicBlock *, 4> exchange_preds;
+                SmallVector<BasicBlock *, 4> skip_preds;
                 for (auto *pred : predecessors(mergeBB)) {
-                  if (pred == barrierBB) continue;
+                  if (pred == commonBB) continue;
                   if (pred->getName().starts_with("if.then") ||
-                      pred->getName().starts_with("cond."))
+                      pred->getName().starts_with("cond.") ||
+                      pred == syncBB)
                     exchange_preds.push_back(pred);
+                  else
+                    skip_preds.push_back(pred);
                 }
                 for (auto *pred : exchange_preds)
                   pred->getTerminator()->replaceUsesOfWith(mergeBB, barrierBB);
+                // Skip preds → skip_barrier → common_barrier
+                if (!skip_preds.empty()) {
+                  BasicBlock *skipBB = BasicBlock::Create(
+                      Ctx, mergeBB->getName().str() + "_skip_barrier",
+                      CI->getFunction(), commonBB);
+                  IRBuilder<> sb(skipBB);
+                  sb.CreateCall(callee);
+                  sb.CreateBr(commonBB);
+                  for (auto *pred : skip_preds)
+                    pred->getTerminator()->replaceUsesOfWith(mergeBB, skipBB);
+                }
               }
             }
           }
+        }
+      }
+    }
+  }
+
+  // Split blocks after shfl_barrier calls to separate the barrier
+  // from following code (e.g. exchange conditional). This ensures
+  // the following code gets its own PR and warp loop.
+  // Must run AFTER xchg_barrier creation (which checks for
+  // conditional terminators in barrier blocks).
+  if (sched == 0) {
+    for (auto &F : *M) {
+      if (!isKernelFunction(M, &F)) continue;
+      SmallVector<CallInst *, 8> shfl_barriers;
+      for (auto &BB : F) {
+        for (auto &I : BB) {
+          if (auto *CI = dyn_cast<CallInst>(&I)) {
+            if (!CI->getCalledFunction()) continue;
+            if (CI->getCalledFunction()->getName() == "cupbop.shfl.barrier")
+              shfl_barriers.push_back(CI);
+          }
+        }
+      }
+      for (auto *CI : shfl_barriers) {
+        auto *following = CI->getNextNode();
+        if (following && !following->isTerminator()) {
+          CI->getParent()->splitBasicBlock(
+              following,
+              CI->getParent()->getName().str() + "_after_shfl");
         }
       }
     }

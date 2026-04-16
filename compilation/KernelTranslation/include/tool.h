@@ -21,6 +21,7 @@ void VerifyModule(llvm::Module *);
 void phi2alloc(llvm::Module *M);
 void remove_cuda_built_in(llvm::Module *M);
 void replace_built_in_function(llvm::Module *M);
+void replace_warp_shfl_early(llvm::Module *M);
 void replace_asm_call(llvm::Module *M);
 bool find_block_barrier_in_region(llvm::BasicBlock *start,
                                   llvm::BasicBlock *end);
