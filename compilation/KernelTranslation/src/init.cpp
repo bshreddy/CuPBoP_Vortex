@@ -827,12 +827,11 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
           if (auto *br = dyn_cast<BranchInst>(term)) {
             if (br->isConditional()) {
               BasicBlock *mergeBB = br->getSuccessor(1);
-              // Only split merge blocks that have exchange-code predecessors.
-              // Exchange code has blocks named if.then*, cond.* as predecessors.
+              // Only split exchange merge blocks. Identify by having a
+              // predecessor named "cond.*" (from cond.true.i in exchange).
               bool has_exchange_pred = false;
               for (auto *pred : predecessors(mergeBB)) {
-                if (pred->getName().starts_with("if.then") ||
-                    pred->getName().starts_with("cond."))
+                if (pred->getName().starts_with("cond."))
                   has_exchange_pred = true;
               }
               if (mergeBB && mergeBB != syncBB && has_exchange_pred) {

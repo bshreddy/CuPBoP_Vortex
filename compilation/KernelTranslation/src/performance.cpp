@@ -137,6 +137,37 @@ void performance_optimization(llvm::Module *M) {
     }
   }
 
+  // Mark shared memory (wrapper_global_*) store/load as volatile
+  // to prevent O3 from eliminating them via DSE/dead-load optimization.
+  for (auto &GV : M->globals()) {
+    if (GV.getName().starts_with("wrapper_global_")) {
+      for (auto *U : GV.users()) {
+        // Handle addrspacecast → GEP → store/load chain
+        for (auto *UU : U->users()) {
+          if (auto *GEP = dyn_cast<GetElementPtrInst>(UU)) {
+            for (auto *GU : GEP->users()) {
+              if (auto *SI = dyn_cast<StoreInst>(GU))
+                SI->setVolatile(true);
+              if (auto *LI = dyn_cast<LoadInst>(GU))
+                LI->setVolatile(true);
+            }
+          } else if (auto *CE = dyn_cast<ConstantExpr>(UU)) {
+            for (auto *CEU : CE->users()) {
+              if (auto *GEP2 = dyn_cast<GetElementPtrInst>(CEU)) {
+                for (auto *GU : GEP2->users()) {
+                  if (auto *SI = dyn_cast<StoreInst>(GU))
+                    SI->setVolatile(true);
+                  if (auto *LI = dyn_cast<LoadInst>(GU))
+                    LI->setVolatile(true);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   llvm::PassBuilder PassBuilder;
   llvm::LoopAnalysisManager LAM;
   llvm::FunctionAnalysisManager FAM;
