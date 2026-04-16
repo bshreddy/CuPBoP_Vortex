@@ -192,10 +192,35 @@ llvm::Instruction *BreakPHIToAllocas(PHINode *phi) {
     builder.SetInsertPoint(incomingBB->getTerminator());
     llvm::Instruction *store = builder.CreateStore(val, alloca);
   }
-  builder.SetInsertPoint(phi);
+  // Insert the load at the phi's position, but AFTER any barrier calls
+  // (cupbop.shfl.barrier, llvm.nvvm.barrier0) that were inserted at the
+  // merge block start. This ensures the barrier is BEFORE the load,
+  // so the exchange code is inside the intra-warp PR.
+  Instruction *insertPt = phi;
+  {
+    auto *nextInst = phi->getNextNode();
+    while (nextInst) {
+      if (auto *CI = dyn_cast<CallInst>(nextInst)) {
+        if (CI->getCalledFunction()) {
+          auto name = CI->getCalledFunction()->getName();
+          if (name == "cupbop.shfl.barrier" || name == "llvm.nvvm.barrier0" ||
+              name == "llvm.nvvm.barrier.sync") {
+            insertPt = nextInst->getNextNode();
+            nextInst = insertPt;
+            continue;
+          }
+        }
+      }
+      break;
+    }
+  }
+  if (insertPt && insertPt != phi)
+    builder.SetInsertPoint(insertPt);
+  else
+    builder.SetInsertPoint(phi);
 
   llvm::Instruction *loadedValue =
-      createLoad(builder, alloca); // builder.CreateLoad(alloca);
+      createLoad(builder, alloca);
   phi->replaceAllUsesWith(loadedValue);
   phi->eraseFromParent();
 

@@ -788,12 +788,11 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
 
   // create global variable for warp and vote
   create_global_variable(M);
-  // replace phi with data load
-  phi2alloc(M);
 
   // For SCHE_0: insert cupbop.shfl.barrier after each barrier0 and at
-  // conditional merge points. Must run AFTER phi2alloc so that the barrier
-  // is placed before phi2alloc's loads (not after them).
+  // conditional merge points. Must run BEFORE phi2alloc so that
+  // BreakPHIToAllocas can place loads AFTER the barrier (not before).
+  // BreakPHIToAllocas skips barrier calls when placing the load.
   if (sched == 0) {
     for (auto &F : *M) {
       if (!isKernelFunction(M, &F)) continue;
@@ -819,17 +818,34 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
             IRBuilder<> builder(next);
             builder.CreateCall(callee);
           }
-          // Insert barrier at the exchange merge (FALSE successor of
-          // syncthreads conditional). This creates a PR boundary so
-          // the exchange code is in its own intra-warp PR.
+          // Create a separate barrier block BEFORE the exchange merge.
+          // Exchange-path predecessors go through the barrier block,
+          // skip-path predecessors go directly to the merge.
+          // This eliminates multi-entry PR issues.
           BasicBlock *syncBB = CI->getParent();
           auto *term = syncBB->getTerminator();
           if (auto *br = dyn_cast<BranchInst>(term)) {
             if (br->isConditional()) {
               BasicBlock *mergeBB = br->getSuccessor(1);
               if (mergeBB && mergeBB != syncBB) {
-                IRBuilder<> mergeBuilder(&*mergeBB->begin());
-                mergeBuilder.CreateCall(callee);
+                BasicBlock *barrierBB = BasicBlock::Create(
+                    Ctx, mergeBB->getName().str() + "_xchg_barrier",
+                    CI->getFunction(), mergeBB);
+                IRBuilder<> bbBuilder(barrierBB);
+                bbBuilder.CreateCall(callee);
+                bbBuilder.CreateBr(mergeBB);
+                // Redirect: syncBB's FALSE goes to barrierBB
+                br->setSuccessor(1, barrierBB);
+                // Redirect exchange-path predecessors to barrierBB
+                SmallVector<BasicBlock *, 4> exchange_preds;
+                for (auto *pred : predecessors(mergeBB)) {
+                  if (pred == barrierBB) continue;
+                  if (pred->getName().starts_with("if.then") ||
+                      pred->getName().starts_with("cond."))
+                    exchange_preds.push_back(pred);
+                }
+                for (auto *pred : exchange_preds)
+                  pred->getTerminator()->replaceUsesOfWith(mergeBB, barrierBB);
               }
             }
           }
@@ -837,6 +853,9 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       }
     }
   }
+
+  // replace phi with data load (AFTER barrier insertion)
+  phi2alloc(M);
 
   // replace share memory
   int schedule = 0;
