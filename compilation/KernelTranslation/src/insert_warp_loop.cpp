@@ -1656,8 +1656,7 @@ public:
         if (region_entry_barrier == NULL)
           region_entry_barrier = current;
         else if (region_entry_barrier != current) {
-          // Multi-entry: keep first barrier, skip second.
-          // The skip-path edge will be handled by LoopSimplify adding preheaders.
+          return;
         }
         continue;
       }
