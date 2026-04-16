@@ -416,12 +416,21 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
 
     // Compute lane-level index within warp (0..31)
     Value *lane_index;
+    // For shfl_down/up, we need bounds checking AFTER the load
+    // (not on the index) to prevent O3 from folding it away.
+    bool needs_bounds_select = false;
+    Value *bounds_cond = nullptr;
+
     if (shfl_name.find("down") != shfl_name.npos) {
       auto calc = builder.CreateAdd(new_intra_warp_index, safe_offset);
+      bounds_cond = builder.CreateICmpULT(calc, ConstantInt::get(I32, 32));
       lane_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
+      needs_bounds_select = true;
     } else if (shfl_name.find("up") != shfl_name.npos) {
       auto calc = builder.CreateSub(new_intra_warp_index, safe_offset);
+      bounds_cond = builder.CreateICmpSGE(calc, ConstantInt::get(I32, 0));
       lane_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
+      needs_bounds_select = true;
     } else if (shfl_name.find("bfly") != shfl_name.npos ||
                shfl_name.find("xor") != shfl_name.npos) {
       auto calc = builder.CreateXor(new_intra_warp_index, safe_offset);
@@ -439,6 +448,11 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     Value *load_inst = builder.CreateLoad(I32, gep);
     if (isFloat)
       load_inst = builder.CreateBitCast(load_inst, builder.getFloatTy());
+
+    // For shfl_down/up: if out of bounds, use own value instead of partner's
+    if (needs_bounds_select) {
+      load_inst = builder.CreateSelect(bounds_cond, load_inst, shfl_variable);
+    }
 
     // Store result to alloca, replace uses with per-user loads
     builder.CreateStore(load_inst, result_alloca);
