@@ -331,7 +331,7 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     auto *newTy = ArrayType::get(I32, n * 1024);
     auto *newGV = new GlobalVariable(
         m, newTy, false, warp_shfl_ptr->getLinkage(),
-        nullptr, "",
+        ConstantAggregateZero::get(newTy), "",
         warp_shfl_ptr, warp_shfl_ptr->getThreadLocalMode(),
         warp_shfl_ptr->getAddressSpace());
     newGV->takeName(warp_shfl_ptr);
