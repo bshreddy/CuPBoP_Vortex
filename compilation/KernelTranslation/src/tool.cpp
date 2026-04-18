@@ -336,6 +336,50 @@ void replace_dynamic_shared_memory(llvm::Module *M) {
   }
 }
 
+void lower_cmpxchg_for_flat(llvm::Module *M) {
+  int schedule = 0;
+  if (char *env = std::getenv("VORTEX_SCHEDULE_FLAG"))
+    schedule = std::stoi(std::string(env));
+  if (schedule != 0) return;
+
+  // In SCHE_0 (FLAT mode), all threads run sequentially on one core.
+  // LR/SC (load-reserved/store-conditional) may not work correctly
+  // because Vortex simx may not track reservations in FLAT mode.
+  // Replace cmpxchg with plain load+compare+store (safe: no races).
+  SmallVector<AtomicCmpXchgInst *, 16> cas_ops;
+  for (auto &F : *M)
+    for (auto &BB : F)
+      for (auto &I : BB)
+        if (auto *CAS = dyn_cast<AtomicCmpXchgInst>(&I))
+          cas_ops.push_back(CAS);
+
+  for (auto *CAS : cas_ops) {
+    IRBuilder<> B(CAS);
+    auto *ptr = CAS->getPointerOperand();
+    auto *cmpVal = CAS->getCompareOperand();
+    auto *newVal = CAS->getNewValOperand();
+    auto *ty = cmpVal->getType();
+
+    // Load current value
+    auto *loaded = B.CreateLoad(ty, ptr);
+    // Compare
+    auto *eq = B.CreateICmpEQ(loaded, cmpVal);
+    // Store new value if equal
+    auto *selected = B.CreateSelect(eq, newVal, loaded);
+    B.CreateStore(selected, ptr);
+
+    // CAS returns {loaded_val, success_bit}
+    Value *result = UndefValue::get(CAS->getType());
+    result = B.CreateInsertValue(result, loaded, 0);
+    result = B.CreateInsertValue(result, eq, 1);
+    CAS->replaceAllUsesWith(result);
+    CAS->eraseFromParent();
+  }
+  if (!cas_ops.empty())
+    fprintf(stderr, "[FLAT] lowered %zu cmpxchg to plain load+cmp+store\n",
+            cas_ops.size());
+}
+
 void replace_warp_shfl_early(llvm::Module *M) {
   int schedule = 0;
   if (char *env = std::getenv("VORTEX_SCHEDULE_FLAG"))

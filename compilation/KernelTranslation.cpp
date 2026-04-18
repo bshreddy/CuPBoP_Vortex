@@ -87,6 +87,13 @@ int main(int argc, char **argv) {
   dumpFile(program, "1_after_insert_sync.ll");
 
   VerifyModule(program);
+
+  // For SCHE_0: lower cmpxchg (atomicCAS) to plain load+cmp+store.
+  // Vortex simx LR/SC may not work in FLAT mode (single-threaded,
+  // no reservation tracking). Plain ops are safe: no concurrent threads.
+  DBG_LOG("lower_cmpxchg_for_flat\n");
+  lower_cmpxchg_for_flat(program);
+
   DBG_LOG("split_block_by_sync\n");
   split_block_by_sync(program);
   dumpFile(program, "2_after_split_sync.ll");
