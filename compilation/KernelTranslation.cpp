@@ -88,6 +88,11 @@ int main(int argc, char **argv) {
 
   VerifyModule(program);
 
+  // Lower atomicrmw fadd (float atomic add) to CAS loop.
+  // RISC-V has no float atomic add instruction.
+  DBG_LOG("lower_atomicrmw_fadd\n");
+  lower_atomicrmw_fadd(program);
+
   // For SCHE_0: lower cmpxchg (atomicCAS) to plain load+cmp+store.
   // Vortex simx LR/SC may not work in FLAT mode (single-threaded,
   // no reservation tracking). Plain ops are safe: no concurrent threads.

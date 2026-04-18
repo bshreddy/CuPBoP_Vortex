@@ -336,6 +336,62 @@ void replace_dynamic_shared_memory(llvm::Module *M) {
   }
 }
 
+void lower_atomicrmw_fadd(llvm::Module *M) {
+  // RISC-V has no float atomic add instruction.
+  // Lower atomicrmw fadd float to CAS loop.
+  SmallVector<AtomicRMWInst *, 16> fadd_ops;
+  for (auto &F : *M)
+    for (auto &BB : F)
+      for (auto &I : BB)
+        if (auto *RMW = dyn_cast<AtomicRMWInst>(&I))
+          if (RMW->getOperation() == AtomicRMWInst::FAdd)
+            fadd_ops.push_back(RMW);
+
+  auto &Ctx = M->getContext();
+  auto *I32 = Type::getInt32Ty(Ctx);
+  for (auto *RMW : fadd_ops) {
+    IRBuilder<> B(RMW);
+    auto *ptr = RMW->getPointerOperand();
+    auto *addend = RMW->getValOperand();
+
+    // CAS loop: old = *ptr; while (!CAS(ptr, old, old+addend)) {}
+    auto *preheader = RMW->getParent();
+    auto *loopBB = preheader->splitBasicBlock(RMW, "atomicfadd.loop");
+    auto *exitBB = loopBB->splitBasicBlock(RMW, "atomicfadd.exit");
+
+    // Preheader: load old value
+    preheader->getTerminator()->eraseFromParent();
+    B.SetInsertPoint(preheader);
+    auto *initVal = B.CreateLoad(B.getFloatTy(), ptr);
+    B.CreateBr(loopBB);
+
+    // Loop: try CAS
+    loopBB->getTerminator()->eraseFromParent();
+    B.SetInsertPoint(loopBB);
+    auto *oldPhi = B.CreatePHI(B.getFloatTy(), 2, "old");
+    oldPhi->addIncoming(initVal, preheader);
+    auto *newVal = B.CreateFAdd(oldPhi, addend);
+    // bitcast float→i32 for CAS
+    auto *oldI32 = B.CreateBitCast(oldPhi, I32);
+    auto *newI32 = B.CreateBitCast(newVal, I32);
+    auto *cas = B.CreateAtomicCmpXchg(ptr, oldI32, newI32,
+        MaybeAlign(), AtomicOrdering::SequentiallyConsistent,
+        AtomicOrdering::SequentiallyConsistent);
+    auto *casVal = B.CreateExtractValue(cas, 0);
+    auto *success = B.CreateExtractValue(cas, 1);
+    auto *casFloat = B.CreateBitCast(casVal, B.getFloatTy());
+    oldPhi->addIncoming(casFloat, loopBB);
+    B.CreateCondBr(success, exitBB, loopBB);
+
+    // Replace uses with old value (atomicrmw returns old)
+    RMW->replaceAllUsesWith(oldPhi);
+    RMW->eraseFromParent();
+  }
+  if (!fadd_ops.empty())
+    fprintf(stderr, "[CuPBoP] lowered %zu atomicrmw fadd to CAS loop\n",
+            fadd_ops.size());
+}
+
 void lower_cmpxchg_for_flat(llvm::Module *M) {
   int schedule = 0;
   if (char *env = std::getenv("VORTEX_SCHEDULE_FLAG"))
