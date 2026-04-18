@@ -321,32 +321,6 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
   GlobalVariable *warp_shfl_ptr = m.getNamedGlobal("warp_shfl");
   fprintf(stderr, "[FLAT] replaceWarpShflFlat called, %zu to replace, warp_shfl_ptr=%p\n",
           replace.size(), (void*)warp_shfl_ptr);
-
-  // Create 2 extra warp_shfl banks to avoid WAR hazards when
-  // consecutive shfl ops (e.g. count/mean/m2n in Welford) share
-  // the same warp_shfl array. shfl_id % 3 selects the bank.
-  auto *shfl_arr_ty = warp_shfl_ptr ? warp_shfl_ptr->getValueType() : nullptr;
-  GlobalVariable *warp_shfl_banks[3] = {warp_shfl_ptr, nullptr, nullptr};
-  if (warp_shfl_ptr && replace.size() > 1) {
-    for (int b = 1; b <= 2; b++) {
-      std::string name = "warp_shfl_" + std::to_string(b);
-      auto *existing = m.getNamedGlobal(name);
-      if (existing) {
-        warp_shfl_banks[b] = existing;
-      } else {
-        warp_shfl_banks[b] = new GlobalVariable(
-            m, shfl_arr_ty, false, warp_shfl_ptr->getLinkage(),
-            nullptr, name, nullptr,
-            warp_shfl_ptr->getThreadLocalMode(),
-            warp_shfl_ptr->getAddressSpace());
-      }
-    }
-  } else {
-    warp_shfl_banks[1] = warp_shfl_ptr;
-    warp_shfl_banks[2] = warp_shfl_ptr;
-  }
-
-  int shfl_id = 0;
   for (auto shfl_inst : replace) {
     fprintf(stderr, "[FLAT] processing shfl in %s\n",
             shfl_inst->getParent()->getParent()->getName().str().c_str());
@@ -397,10 +371,6 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
         createLoad(builder, m.getGlobalVariable("intra_warp_index"));
     auto inter_warp_index =
         createLoad(builder, m.getGlobalVariable("inter_warp_index"));
-    // Select bank: shfl_id % 3 to avoid WAR hazard between
-    // consecutive shfl ops sharing warp_shfl
-    auto *cur_shfl_ptr = warp_shfl_banks[shfl_id % 3];
-
     // Index by inter*32 + intra to isolate warps in warp_shfl[1024]
     auto store_idx = builder.CreateAdd(intra_warp_index,
         builder.CreateMul(inter_warp_index, ConstantInt::get(I32, 32)),
@@ -408,8 +378,8 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     Value *val_to_store = shfl_variable;
     if (isFloat)
         val_to_store = builder.CreateBitCast(val_to_store, I32);
-    auto store_gep = builder.CreateGEP(cur_shfl_ptr->getValueType(),
-                                        cur_shfl_ptr, {C0, store_idx});
+    auto store_gep = builder.CreateGEP(warp_shfl_ptr->getValueType(),
+                                        warp_shfl_ptr, {C0, store_idx});
     builder.CreateStore(val_to_store, store_gep);
 
     // shfl_barrier separates the store from the read.
@@ -454,15 +424,12 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     if (shfl_name.find("down") != shfl_name.npos) {
       auto calc = builder.CreateAdd(new_intra_warp_index, safe_offset);
       bounds_cond = builder.CreateICmpULT(calc, ConstantInt::get(I32, 32));
-      // Use AND 31 instead of SRem to prevent O3 from converting
-      // (intra+offset)%32 into XOR (which is shfl_xor semantics).
-      // The bounds_select below handles OOB lanes.
-      lane_index = builder.CreateAnd(calc, ConstantInt::get(I32, 31));
+      lane_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
       needs_bounds_select = true;
     } else if (shfl_name.find("up") != shfl_name.npos) {
       auto calc = builder.CreateSub(new_intra_warp_index, safe_offset);
       bounds_cond = builder.CreateICmpSGE(calc, ConstantInt::get(I32, 0));
-      lane_index = builder.CreateAnd(calc, ConstantInt::get(I32, 31));
+      lane_index = builder.CreateSRem(calc, ConstantInt::get(I32, 32));
       needs_bounds_select = true;
     } else if (shfl_name.find("bfly") != shfl_name.npos ||
                shfl_name.find("xor") != shfl_name.npos) {
@@ -476,7 +443,7 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
         builder.CreateMul(new_inter_warp_index, ConstantInt::get(I32, 32)),
         "shfl_load_idx");
 
-    auto gep = builder.CreateGEP(cur_shfl_ptr->getValueType(), cur_shfl_ptr,
+    auto gep = builder.CreateGEP(warp_shfl_ptr->getValueType(), warp_shfl_ptr,
                                   {C0, load_index});
     Value *load_inst = builder.CreateLoad(I32, gep);
     if (isFloat)
@@ -506,7 +473,6 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
       user->replaceUsesOfWith(shfl_inst, res_load);
     }
     shfl_inst->eraseFromParent();
-    shfl_id++;
   }
 }
 
