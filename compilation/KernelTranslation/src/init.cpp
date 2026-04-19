@@ -809,7 +809,23 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
           }
         }
       }
-      if (!sync_calls.empty()) {
+      // Only insert shfl_barriers in kernels that actually use shfl.
+      // Kernels without shfl don't need the extra barriers, and adding
+      // them causes barrier/warp-loop explosion (cc-cuda: 1201 barriers).
+      bool kernel_has_shfl = false;
+      for (auto &BB : F) {
+        for (auto &I : BB) {
+          if (auto *CI2 = dyn_cast<CallInst>(&I)) {
+            if (CI2->isInlineAsm() || !CI2->getCalledFunction()) continue;
+            auto n = CI2->getCalledFunction()->getName().str();
+            if (n.find("shfl") != std::string::npos ||
+                n.find("cupbop.shfl") != std::string::npos)
+              kernel_has_shfl = true;
+          }
+        }
+        if (kernel_has_shfl) break;
+      }
+      if (!sync_calls.empty() && kernel_has_shfl) {
         auto &Ctx = M->getContext();
         auto FT = FunctionType::get(Type::getVoidTy(Ctx), {}, false);
         auto callee = M->getOrInsertFunction("cupbop.shfl.barrier", FT);
