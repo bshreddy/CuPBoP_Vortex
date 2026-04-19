@@ -339,6 +339,14 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     bool isFloat = shfl_variable->getType()->isFloatTy();
     auto shfl_name = shfl_inst->getCalledOperand()->getName().str();
 
+    // idx mode: __shfl_sync(mask,val,lane) — simple broadcast/read.
+    // Don't add barrier splits (too many warp loops for cc-cuda).
+    bool isIdxMode = (shfl_name.find("idx") != shfl_name.npos ||
+                      (shfl_name.find("__shfl_sync") != shfl_name.npos &&
+                       shfl_name.find("down") == shfl_name.npos &&
+                       shfl_name.find("up") == shfl_name.npos &&
+                       shfl_name.find("xor") == shfl_name.npos));
+
     // Always use allocas for shfl_offset — split_block_by_sync splits at
     // barrier0 later, which can separate operand definition from use.
     // The allocas are named "shfl_*" so insert_warp_loop skips them
@@ -353,11 +361,8 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     builder.CreateStore(shfl_offset, offset_alloca);
 
     // Split BEFORE the store: separates this shfl's store from the
-    // PREVIOUS shfl's read+combine. Without this, the store and the
-    // previous read are in the same warp loop, and the store
-    // overwrites warp_shfl[tid] before all threads finish reading,
-    // causing a race condition in sequential (SCHE_0) execution.
-    {
+    // PREVIOUS shfl's read+combine. Skip for idx mode (no combine).
+    if (!isIdxMode) {
       auto *insertBB = builder.GetInsertBlock();
       auto *insertPt = &*builder.GetInsertPoint();
       if (insertPt != &*insertBB->begin()) {
@@ -383,29 +388,28 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
     builder.CreateStore(val_to_store, store_gep);
 
     // shfl_barrier separates the store from the read.
-    // Manually split the block so the store and read are in
-    // separate basic blocks. This creates a proper PR boundary:
-    // the store gets its own PR (wrapped in a warp loop for
-    // per-thread warp_shfl initialization), and the read gets
-    // a separate PR.
-    CallInst *shfl_call;
-    {
-      auto FT = FunctionType::get(Type::getVoidTy(m.getContext()), {}, false);
-      auto callee = m.getOrInsertFunction("cupbop.shfl.barrier", FT);
-      shfl_call = builder.CreateCall(callee);
+    // For idx mode, skip barrier/split — idx is a simple read from
+    // a fixed lane, no synchronization needed between store and read.
+    if (!isIdxMode) {
+      CallInst *shfl_call;
+      {
+        auto FT = FunctionType::get(Type::getVoidTy(m.getContext()), {}, false);
+        auto callee = m.getOrInsertFunction("cupbop.shfl.barrier", FT);
+        shfl_call = builder.CreateCall(callee);
+      }
+      // Split block: store → | shfl_barrier → read
+      auto *storeBlock = shfl_call->getParent();
+      auto *barrierBlock = storeBlock->splitBasicBlock(
+          shfl_call, storeBlock->getName().str() + "_shfl_barrier");
+      // Split again: shfl_barrier → | read
+      auto *nextAfterBarrier = shfl_call->getNextNode();
+      if (nextAfterBarrier && !nextAfterBarrier->isTerminator()) {
+        barrierBlock->splitBasicBlock(
+            nextAfterBarrier, storeBlock->getName().str() + "_shfl_read");
+      }
+      // Reset builder to the read block
+      builder.SetInsertPoint(nextAfterBarrier);
     }
-    // Split block: store → | shfl_barrier → read
-    auto *storeBlock = shfl_call->getParent();
-    auto *barrierBlock = storeBlock->splitBasicBlock(
-        shfl_call, storeBlock->getName().str() + "_shfl_barrier");
-    // Split again: shfl_barrier → | read
-    auto *nextAfterBarrier = shfl_call->getNextNode();
-    if (nextAfterBarrier && !nextAfterBarrier->isTerminator()) {
-      barrierBlock->splitBasicBlock(
-          nextAfterBarrier, storeBlock->getName().str() + "_shfl_read");
-    }
-    // Reset builder to the read block
-    builder.SetInsertPoint(nextAfterBarrier);
 
     // After barrier: load offset from alloca (survives BB split)
     auto safe_offset = builder.CreateLoad(I32, offset_alloca, "shfl_off_ld");
