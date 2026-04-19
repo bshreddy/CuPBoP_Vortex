@@ -638,6 +638,11 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
         if (isKernelFunction(M, &F)) continue;
         if (F.getName().starts_with("__nv_")) continue;
         if (F.getName().contains("__vx_")) continue;
+        // Skip atomicCAS wrapper — inlining exposes cmpxchg which
+        // causes code explosion with cmpxchg lowering + O3 duplication.
+        // Keep as function call; Vortex handles lr/sc in the wrapper.
+        if (F.getName().contains("AtomicCAS") ||
+            F.getName().contains("atomicCAS")) continue;
         SmallVector<CallInst*, 8> calls;
         for (auto *U : F.users())
           if (auto *CI = dyn_cast<CallInst>(U))
@@ -812,14 +817,25 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
       // Only insert shfl_barriers in kernels that actually use shfl.
       // Kernels without shfl don't need the extra barriers, and adding
       // them causes barrier/warp-loop explosion (cc-cuda: 1201 barriers).
+      // Only insert shfl_barriers if kernel uses shfl_down/up/xor/bfly.
+      // shfl idx (broadcast) doesn't need barrier synchronization, and
+      // adding barriers causes code explosion (cc-cuda: 569→9032 lines).
+      // Note: at this point, early shfl replacement has already converted
+      // shfl calls to warp_shfl store+cupbop.shfl.barrier+read.
+      // Check for warp_shfl GEPs as evidence of down/up/xor replacement.
+      // idx mode replacement doesn't create barriers (isIdxMode skip).
       bool kernel_has_shfl = false;
       for (auto &BB : F) {
         for (auto &I : BB) {
           if (auto *CI2 = dyn_cast<CallInst>(&I)) {
             if (CI2->isInlineAsm() || !CI2->getCalledFunction()) continue;
             auto n = CI2->getCalledFunction()->getName().str();
-            if (n.find("shfl") != std::string::npos ||
-                n.find("cupbop.shfl") != std::string::npos)
+            // Only count down/up/xor/bfly shfl (not idx, not cupbop.shfl.barrier)
+            if (n.find("shfl") != std::string::npos &&
+                (n.find("down") != std::string::npos ||
+                 n.find("up") != std::string::npos ||
+                 n.find("xor") != std::string::npos ||
+                 n.find("bfly") != std::string::npos))
               kernel_has_shfl = true;
           }
         }

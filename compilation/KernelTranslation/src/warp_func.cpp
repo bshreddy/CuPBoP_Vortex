@@ -30,7 +30,10 @@ ReplaceWarpLevelPrimitive::ReplaceWarpLevelPrimitive(MapOpt mapping)
     : mapping_(mapping) {}
 
 PreservedAnalyses ReplaceWarpLevelPrimitive::run(Module &m, ModuleAnalysisManager&) {
-  replaceWarpShfl(m);
+  // In FLAT mode, skip shfl replacement here — it's handled by
+  // replace_warp_shfl_early() after init_block (barrier insertion order matters).
+  if (mapping_ != MAPPING_FLAT)
+    replaceWarpShfl(m);
   replaceWarpVote(m);
   return PreservedAnalyses::all();
 }
