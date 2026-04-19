@@ -93,9 +93,6 @@ int main(int argc, char **argv) {
   DBG_LOG("lower_atomicrmw_fadd\n");
   lower_atomicrmw_fadd(program);
 
-  // For SCHE_0: lower cmpxchg (atomicCAS) to plain load+cmp+store.
-  // Vortex simx LR/SC may not work in FLAT mode (single-threaded,
-  // no reservation tracking). Plain ops are safe: no concurrent threads.
   DBG_LOG("lower_cmpxchg_for_flat\n");
   lower_cmpxchg_for_flat(program);
 

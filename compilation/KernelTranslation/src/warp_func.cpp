@@ -193,18 +193,20 @@ void ReplaceWarpLevelPrimitive::replaceWarpVote1to1(
 void ReplaceWarpLevelPrimitive::replaceWarpVoteX86(
     Module &m, const set<CallInst *> &replace) {}
 
-bool ReplaceWarpLevelPrimitive::replaceWarpShfl(Module &m) {
+bool ReplaceWarpLevelPrimitive::replaceWarpShfl(Module &m, bool excludeIdx) {
 
   DenseSet<StringRef> shflFuncs;
 
   shflFuncs = {"llvm.nvvm.shfl.sync.down.i32",
                 "llvm.nvvm.shfl.sync.up.i32",
                 "llvm.nvvm.shfl.sync.bfly.i32",
-                "llvm.nvvm.shfl.sync.idx.i32",
                 "llvm.nvvm.shfl.sync.down.f32",
                 "llvm.nvvm.shfl.sync.up.f32",
-                "llvm.nvvm.shfl.sync.bfly.f32",
-                "llvm.nvvm.shfl.sync.idx.f32"};
+                "llvm.nvvm.shfl.sync.bfly.f32"};
+  if (!excludeIdx) {
+    shflFuncs.insert("llvm.nvvm.shfl.sync.idx.i32");
+    shflFuncs.insert("llvm.nvvm.shfl.sync.idx.f32");
+  }
 
   // Also match C++ mangled __shfl*_sync functions for FLAT mode.
   // These appear when CUDA code uses __shfl_sync() directly.
@@ -214,8 +216,10 @@ bool ReplaceWarpLevelPrimitive::replaceWarpShfl(Module &m) {
       return true;
     if (name.find("__shfl_down_sync") != string::npos ||
         name.find("__shfl_up_sync") != string::npos ||
-        name.find("__shfl_xor_sync") != string::npos ||
-        name.find("__shfl_sync") != string::npos)
+        name.find("__shfl_xor_sync") != string::npos)
+      return true;
+    // Plain __shfl_sync (idx mode) — only match if not excluding idx
+    if (!excludeIdx && name.find("__shfl_sync") != string::npos)
       return true;
     return false;
   };
@@ -250,8 +254,11 @@ bool ReplaceWarpLevelPrimitive::replaceWarpShfl(Module &m) {
           auto name = calledFunc->getName().str();
           // Match both C++ wrapper calls and NVVM intrinsics.
           // On sm_90, clang inlines C++ wrappers leaving only NVVM intrinsics.
-          if (isShflCall(name))
+          if (isShflCall(name)) {
+            fprintf(stderr, "[FLAT] matched shfl: %s (excludeIdx=%d)\n",
+                    name.c_str(), excludeIdx);
             replace.insert(ci);
+          }
         }
       }
     }

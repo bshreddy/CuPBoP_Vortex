@@ -29,7 +29,7 @@ public:
   /// @brief replace warp level primitives
   PreservedAnalyses run(Module &M, ModuleAnalysisManager&);
 
-  bool replaceWarpShfl(Module &m);
+  bool replaceWarpShfl(Module &m, bool excludeIdx = false);
 
 private:
   /// @brief replace warp vote

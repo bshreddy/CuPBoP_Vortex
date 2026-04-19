@@ -444,7 +444,8 @@ void replace_warp_shfl_early(llvm::Module *M) {
 
   using namespace cupbop;
   ReplaceWarpLevelPrimitive rw(MAPPING_FLAT);
-  rw.replaceWarpShfl(*M);
+  rw.replaceWarpShfl(*M, /*excludeIdx=*/true);
+  fprintf(stderr, "[FLAT] early shfl replace done (excludeIdx=true)\n");
 }
 
 void replace_built_in_function(llvm::Module *M) {
