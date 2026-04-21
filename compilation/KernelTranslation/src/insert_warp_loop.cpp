@@ -437,8 +437,13 @@ llvm::Instruction *AddContextSave(llvm::Instruction *instruction,
       "thread_idx_in_block");
   // Include block_index_x to separate slots per block (FLAT mode runs
   // multiple blocks on different HW threads, all sharing same indvars).
-  // Slot = block_index_x * 1024 + intra + inter*32
-  auto block_index_x = createLoad(builder, M->getGlobalVariable("block_index_x"));
+  // block_index_x is TLS; load via threadlocal.address.
+  auto bidx_global = M->getGlobalVariable("block_index_x");
+  auto bidx_tls_ptr = builder.CreateCall(
+      Intrinsic::getDeclaration(M, Intrinsic::threadlocal_address,
+                                {bidx_global->getType()}),
+      {bidx_global});
+  auto block_index_x = builder.CreateLoad(I32, bidx_tls_ptr, "bidx_x");
   auto block_offset = builder.CreateBinOp(Instruction::Mul, block_index_x,
                                           ConstantInt::get(I32, 1024));
   auto thread_idx = builder.CreateBinOp(Instruction::Add, thread_idx_in_block,
@@ -478,7 +483,13 @@ llvm::Instruction *AddContextRestore(llvm::Value *val,
                           ConstantInt::get(I32, SW_WARP_SIZE)),
       "thread_idx_in_block");
   // Include block_index_x to separate slots per block (matches AddContextSave)
-  auto block_index_x = createLoad(builder, M->getGlobalVariable("block_index_x"));
+  // block_index_x is TLS; must use threadlocal.address to get per-thread value.
+  auto bidx_global = M->getGlobalVariable("block_index_x");
+  auto bidx_tls_ptr = builder.CreateCall(
+      Intrinsic::getDeclaration(M, Intrinsic::threadlocal_address,
+                                {bidx_global->getType()}),
+      {bidx_global});
+  auto block_index_x = builder.CreateLoad(I32, bidx_tls_ptr, "bidx_x");
   auto block_offset = builder.CreateBinOp(Instruction::Mul, block_index_x,
                                           ConstantInt::get(I32, 1024));
   auto thread_idx = builder.CreateBinOp(Instruction::Add, thread_idx_in_block,
