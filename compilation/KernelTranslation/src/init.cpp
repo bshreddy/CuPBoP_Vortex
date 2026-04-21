@@ -638,11 +638,16 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
         if (isKernelFunction(M, &F)) continue;
         if (F.getName().starts_with("__nv_")) continue;
         if (F.getName().contains("__vx_")) continue;
-        // Skip atomicCAS wrapper — inlining exposes cmpxchg which
-        // causes code explosion with cmpxchg lowering + O3 duplication.
-        // Keep as function call; Vortex handles lr/sc in the wrapper.
+        // Skip functions that cause code explosion when inlined HERE
+        // (general inline loop). However, do NOT mark them noinline —
+        // the later O3 inliner needs to inline them, otherwise Vortex
+        // backend's VortexDivergenceArguments pass enters an infinite
+        // ping-pong loop when multiple kernels call the same callee
+        // with different argument divergence (cc-cuda: compute1+compute2
+        // both call representative, pass loops 20,325× per function).
         if (F.getName().contains("AtomicCAS") ||
-            F.getName().contains("atomicCAS")) continue;
+            F.getName().contains("atomicCAS") ||
+            F.getName().contains("representative")) continue;
         SmallVector<CallInst*, 8> calls;
         for (auto *U : F.users())
           if (auto *CI = dyn_cast<CallInst>(U))
@@ -704,7 +709,16 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
             if (auto *CI = dyn_cast<CallInst>(&I)) {
               if (CI->getCalledFunction()) {
                 auto name = CI->getCalledFunction()->getName();
-                if (name.contains("shfl") || name.contains("nvvm.shfl"))
+                // Only unroll for shfl variants that need per-lane state:
+                // down/up/xor/bfly. idx-mode (__shfl_sync) is a broadcast
+                // that doesn't need warp-loop unrolling — and forcing 32x
+                // unroll on a loop containing CAS/atomic causes O3 to hang
+                // (cc-cuda compute2: 5306 lines, clang stuck at 99% CPU).
+                if (name.contains("shfl_down") || name.contains("shfl_up") ||
+                    name.contains("shfl_xor") || name.contains("shfl_bfly") ||
+                    name.contains("nvvm.shfl.sync.down") ||
+                    name.contains("nvvm.shfl.sync.up") ||
+                    name.contains("nvvm.shfl.sync.bfly"))
                   has_shfl = true;
               }
             }

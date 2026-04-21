@@ -375,7 +375,10 @@ llvm::Instruction *GetContextArray(llvm::Instruction *instruction,
     // SCHE_0 with shfl: use context pool to avoid stack overflow.
     // Load pool pointer once (volatile to prevent O3 from folding/eliminating),
     // then store to a stack alloca so subsequent uses are fast stack reads.
-    constexpr int MAX_BLK = 1024;
+    // Each slot holds entries for up to MAX_BLOCKS blocks * MAX_THREADS_PER_BLOCK
+    // (block_index_x * 1024 + thread_idx_in_block) — see AddContextSave.
+    constexpr int MAX_BLOCKS = 8;
+    constexpr int MAX_BLK = 1024 * MAX_BLOCKS;  // 8K i32 per slot
     int elemSize = Layout.getTypeAllocSize(AllocType);
     int elemOffset = g_ctx_pool_offset / elemSize;
 
@@ -427,11 +430,19 @@ llvm::Instruction *AddContextSave(llvm::Instruction *instruction,
       createLoad(builder, M->getGlobalVariable("inter_warp_index"));
   auto intra_warp_index =
       createLoad(builder, M->getGlobalVariable("intra_warp_index"));
-  auto thread_idx = builder.CreateBinOp(
+  auto thread_idx_in_block = builder.CreateBinOp(
       Instruction::Add, intra_warp_index,
       builder.CreateBinOp(Instruction::Mul, inter_warp_index,
-                          ConstantInt::get(I32, SW_WARP_SIZE)), 
-      "thread_idx");
+                          ConstantInt::get(I32, SW_WARP_SIZE)),
+      "thread_idx_in_block");
+  // Include block_index_x to separate slots per block (FLAT mode runs
+  // multiple blocks on different HW threads, all sharing same indvars).
+  // Slot = block_index_x * 1024 + intra + inter*32
+  auto block_index_x = createLoad(builder, M->getGlobalVariable("block_index_x"));
+  auto block_offset = builder.CreateBinOp(Instruction::Mul, block_index_x,
+                                          ConstantInt::get(I32, 1024));
+  auto thread_idx = builder.CreateBinOp(Instruction::Add, thread_idx_in_block,
+                                        block_offset, "thread_idx");
   gepArgs.push_back(thread_idx);
 
   return builder.CreateStore(instruction, createGEP(builder, alloca, gepArgs));
@@ -461,11 +472,17 @@ llvm::Instruction *AddContextRestore(llvm::Value *val,
         createLoad(builder, M->getGlobalVariable("inter_warp_index"));
   auto intra_warp_index =
         createLoad(builder, M->getGlobalVariable("intra_warp_index"));
-  auto thread_idx = builder.CreateBinOp(
+  auto thread_idx_in_block = builder.CreateBinOp(
       Instruction::Add, intra_warp_index,
       builder.CreateBinOp(Instruction::Mul, inter_warp_index,
                           ConstantInt::get(I32, SW_WARP_SIZE)),
-      "thread_idx");
+      "thread_idx_in_block");
+  // Include block_index_x to separate slots per block (matches AddContextSave)
+  auto block_index_x = createLoad(builder, M->getGlobalVariable("block_index_x"));
+  auto block_offset = builder.CreateBinOp(Instruction::Mul, block_index_x,
+                                          ConstantInt::get(I32, 1024));
+  auto thread_idx = builder.CreateBinOp(Instruction::Add, thread_idx_in_block,
+                                        block_offset, "thread_idx");
   gepArgs.push_back(thread_idx);
 
   // print val
