@@ -395,7 +395,8 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
         val_to_store = builder.CreateBitCast(val_to_store, I32);
     auto store_gep = builder.CreateGEP(warp_shfl_ptr->getValueType(),
                                         warp_shfl_ptr, {C0, store_idx});
-    builder.CreateStore(val_to_store, store_gep);
+    auto *store_inst = builder.CreateStore(val_to_store, store_gep);
+    cast<StoreInst>(store_inst)->setVolatile(true);
 
     // shfl_barrier separates the store from the read.
     // For idx mode, skip barrier/split — idx is a simple read from
@@ -450,7 +451,9 @@ void ReplaceWarpLevelPrimitive::replaceWarpShflFlat(
 
     auto gep = builder.CreateGEP(warp_shfl_ptr->getValueType(), warp_shfl_ptr,
                                   {C0, load_index});
-    Value *load_inst = builder.CreateLoad(I32, gep);
+    auto *load_raw = builder.CreateLoad(I32, gep);
+    cast<LoadInst>(load_raw)->setVolatile(true);
+    Value *load_inst = load_raw;
     if (isFloat)
       load_inst = builder.CreateBitCast(load_inst, builder.getFloatTy());
 

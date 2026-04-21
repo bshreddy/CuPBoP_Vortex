@@ -887,8 +887,8 @@ cudaError_t cudaLaunchKernel_vortex(
     static uint64_t ctx_pool_addr = 0;
     if (!ctx_pool_addr) {
       void *p = nullptr;
-      // 4MB pool - supports MAX_BLOCKS=8 in slot indexing (insert_warp_loop.cpp)
-      cudaMalloc(&p, 4 * 1024 * 1024);
+      // 32MB pool — score-cuda has ~320 shfl_res allocas × 32KB = 10MB
+      cudaMalloc(&p, 32 * 1024 * 1024);
       ctx_pool_addr = (uint64_t)p;
       DBG_PRINT("ctx_pool: 0x%lx\n", ctx_pool_addr);
     }
