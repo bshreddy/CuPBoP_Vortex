@@ -376,7 +376,8 @@ void create_kernel_wrapper_function(llvm::Module *M){
             "int __thread thread_id_y;\n"
             "int __thread thread_id_z;\n"
             "\n"
-            "int __thread warp_shfl[1024] = {0};\n"
+            "#include <VX_config.h>\n"
+            "int __thread warp_shfl[NUM_WARPS * NUM_THREADS] = {0};\n"
             "char __thread warp_vote[32] = {0};\n"
             "int __thread vote_count = 0;\n"
             "\n";
