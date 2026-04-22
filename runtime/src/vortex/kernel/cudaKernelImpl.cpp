@@ -657,3 +657,26 @@ extern "C" void __vx_wmma_mma_m32n8k16_row_row_f16_f16_f32(float *d,
   d[6] = d6;
   d[7] = d7;
 }
+
+// Float atomic add helper.
+// RISC-V "A" extension has no native float atomic add. The default LLVM
+// lowering of `atomicrmw fadd` produces a cmpxchg (LR/SC) loop, but the
+// inner `bnez` retry diverges within a warp, and Vortex BR uses the
+// last-active-lane to decide branches — yielding livelock when multiple
+// lanes contend on the same float address. This helper serializes lane
+// by lane to avoid that divergent cmpxchg.
+extern "C" __attribute__((noinline))
+float __cuda_atomic_fadd_f32(float *addr, float val) {
+  int lane = vx_thread_id();
+  float old = 0.0f;
+  // Serialize within warp: only lane k executes the RMW at iteration k.
+  // simx interleaves warps at instruction granularity, so within-block
+  // atomicity holds for grid=1; multi-block needs additional locking.
+  for (int k = 0; k < 32; k++) {
+    if (lane == k) {
+      old = *addr;
+      *addr = old + val;
+    }
+  }
+  return old;
+}

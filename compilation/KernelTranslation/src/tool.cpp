@@ -337,59 +337,41 @@ void replace_dynamic_shared_memory(llvm::Module *M) {
 }
 
 void lower_atomicrmw_fadd(llvm::Module *M) {
-  // RISC-V has no float atomic add instruction.
-  // Lower atomicrmw fadd float to CAS loop.
+  // RISC-V "A" extension has no native float atomic add. The natural
+  // lowering to a cmpxchg (LR/SC) loop livelocks under SIMT contention
+  // because the inner `bnez` retry diverges and Vortex BR uses the
+  // last-active-lane to decide branches. Replace with a call to the
+  // runtime helper `__cuda_atomic_fadd_f32` (in cudaKernelImpl.cpp),
+  // which serializes the RMW lane-by-lane to avoid the divergence.
   SmallVector<AtomicRMWInst *, 16> fadd_ops;
   for (auto &F : *M)
     for (auto &BB : F)
       for (auto &I : BB)
         if (auto *RMW = dyn_cast<AtomicRMWInst>(&I))
-          if (RMW->getOperation() == AtomicRMWInst::FAdd)
+          if (RMW->getOperation() == AtomicRMWInst::FAdd &&
+              RMW->getValOperand()->getType()->isFloatTy())
             fadd_ops.push_back(RMW);
 
+  if (fadd_ops.empty())
+    return;
+
   auto &Ctx = M->getContext();
-  auto *I32 = Type::getInt32Ty(Ctx);
+  auto *FloatTy = Type::getFloatTy(Ctx);
+  auto *PtrTy = PointerType::getUnqual(Ctx);
+  auto *FnTy = FunctionType::get(FloatTy, {PtrTy, FloatTy}, false);
+  FunctionCallee Helper = M->getOrInsertFunction(
+      "__cuda_atomic_fadd_f32", FnTy);
+
   for (auto *RMW : fadd_ops) {
     IRBuilder<> B(RMW);
     auto *ptr = RMW->getPointerOperand();
     auto *addend = RMW->getValOperand();
-
-    // CAS loop: old = *ptr; while (!CAS(ptr, old, old+addend)) {}
-    auto *preheader = RMW->getParent();
-    auto *loopBB = preheader->splitBasicBlock(RMW, "atomicfadd.loop");
-    auto *exitBB = loopBB->splitBasicBlock(RMW, "atomicfadd.exit");
-
-    // Preheader: load old value
-    preheader->getTerminator()->eraseFromParent();
-    B.SetInsertPoint(preheader);
-    auto *initVal = B.CreateLoad(B.getFloatTy(), ptr);
-    B.CreateBr(loopBB);
-
-    // Loop: try CAS
-    loopBB->getTerminator()->eraseFromParent();
-    B.SetInsertPoint(loopBB);
-    auto *oldPhi = B.CreatePHI(B.getFloatTy(), 2, "old");
-    oldPhi->addIncoming(initVal, preheader);
-    auto *newVal = B.CreateFAdd(oldPhi, addend);
-    // bitcast float→i32 for CAS
-    auto *oldI32 = B.CreateBitCast(oldPhi, I32);
-    auto *newI32 = B.CreateBitCast(newVal, I32);
-    auto *cas = B.CreateAtomicCmpXchg(ptr, oldI32, newI32,
-        MaybeAlign(), AtomicOrdering::SequentiallyConsistent,
-        AtomicOrdering::SequentiallyConsistent);
-    auto *casVal = B.CreateExtractValue(cas, 0);
-    auto *success = B.CreateExtractValue(cas, 1);
-    auto *casFloat = B.CreateBitCast(casVal, B.getFloatTy());
-    oldPhi->addIncoming(casFloat, loopBB);
-    B.CreateCondBr(success, exitBB, loopBB);
-
-    // Replace uses with old value (atomicrmw returns old)
-    RMW->replaceAllUsesWith(oldPhi);
+    auto *call = B.CreateCall(Helper, {ptr, addend});
+    RMW->replaceAllUsesWith(call);
     RMW->eraseFromParent();
   }
-  if (!fadd_ops.empty())
-    fprintf(stderr, "[CuPBoP] lowered %zu atomicrmw fadd to CAS loop\n",
-            fadd_ops.size());
+  fprintf(stderr, "[CuPBoP] lowered %zu atomicrmw fadd to __cuda_atomic_fadd_f32 call\n",
+          fadd_ops.size());
 }
 
 void lower_cmpxchg_for_flat(llvm::Module *M) {
