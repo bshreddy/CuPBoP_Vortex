@@ -343,6 +343,16 @@ void lower_atomicrmw_fadd(llvm::Module *M) {
   // last-active-lane to decide branches. Replace with a call to the
   // runtime helper `__cuda_atomic_fadd_f32` (in cudaKernelImpl.cpp),
   // which serializes the RMW lane-by-lane to avoid the divergence.
+  //
+  // SCHE_0 only: lower_cmpxchg_for_flat (below) already converts cmpxchg to
+  // plain load+compare+store (safe because FLAT mode runs threads serially),
+  // so the standard cmpxchg expansion works fine without the helper. Skip
+  // this lowering in SCHE_0 to avoid the helper's unnecessary lock overhead.
+  int schedule = 0;
+  if (char *env = std::getenv("VORTEX_SCHEDULE_FLAG"))
+    schedule = std::stoi(std::string(env));
+  if (schedule == 0) return;
+
   SmallVector<AtomicRMWInst *, 16> fadd_ops;
   for (auto &F : *M)
     for (auto &BB : F)
