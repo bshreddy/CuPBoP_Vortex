@@ -660,22 +660,29 @@ extern "C" void __vx_wmma_mma_m32n8k16_row_row_f16_f16_f32(float *d,
 
 // Float atomic add helper.
 // RISC-V "A" extension has no native float atomic add. The default LLVM
-// lowering of `atomicrmw fadd` produces a cmpxchg (LR/SC) loop, but the
-// inner `bnez` retry diverges within a warp, and Vortex BR uses the
-// last-active-lane to decide branches — yielding livelock when multiple
-// lanes contend on the same float address. This helper serializes lane
-// by lane to avoid that divergent cmpxchg.
+// lowering of `atomicrmw fadd` produces a cmpxchg (LR/SC) loop whose
+// inner `bnez` retry diverges within a warp; Vortex BR uses the
+// last-active-lane to decide branches → livelock when multiple lanes
+// contend on the same float address.
+//
+// This helper serializes the RMW two ways:
+//   1. Within a warp: lane-by-lane (only lane==k executes per iteration)
+//   2. Across warps/cores: spinlock acquired inside the per-lane region,
+//      so the spin's branch is single-threaded and uniform (no divergence).
+static volatile int __cuda_atomic_fadd_lock __attribute__((aligned(4))) = 0;
+
 extern "C" __attribute__((noinline))
 float __cuda_atomic_fadd_f32(float *addr, float val) {
   int lane = vx_thread_id();
   float old = 0.0f;
-  // Serialize within warp: only lane k executes the RMW at iteration k.
-  // simx interleaves warps at instruction granularity, so within-block
-  // atomicity holds for grid=1; multi-block needs additional locking.
   for (int k = 0; k < 32; k++) {
     if (lane == k) {
+      // Single active thread here; spin to acquire global lock.
+      while (__atomic_exchange_n((int *)&__cuda_atomic_fadd_lock, 1,
+                                 __ATOMIC_ACQUIRE) != 0) { }
       old = *addr;
       *addr = old + val;
+      __atomic_store_n((int *)&__cuda_atomic_fadd_lock, 0, __ATOMIC_RELEASE);
     }
   }
   return old;
