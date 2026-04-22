@@ -251,6 +251,12 @@ struct ParallelRegion {
 
 std::map<llvm::Instruction *, unsigned> tempInstructionIds;
 std::map<std::string, llvm::Instruction *> contextArrays;
+// Per-function cache of the volatile __ctx_pool load. Volatile prevents O3
+// from CSE-ing duplicate loads, so we share one explicit instruction across
+// all GetContextArray calls in the same function (otherwise each call site
+// emits its own load and the function bloats with N extra loads of the
+// same address).
+std::map<llvm::Function *, llvm::Instruction *> ctxPoolLoadCache;
 int tempInstructionIndex = 0;
 static int g_schedule_flag = 2;
 static int g_ctx_pool_offset = 0;
@@ -382,12 +388,20 @@ llvm::Instruction *GetContextArray(llvm::Instruction *instruction,
     int elemSize = Layout.getTypeAllocSize(AllocType);
     int elemOffset = g_ctx_pool_offset / elemSize;
 
-    // Single volatile load per call — O3 will CSE them into one.
-    // volatile prevents elimination but allows CSE of same-address loads.
-    auto *PoolPtr = M->getGlobalVariable("__ctx_pool");
-    auto *CachedLoad = builder.CreateLoad(
-        PointerType::getUnqual(C), PoolPtr, "__ctx_pool_ld");
-    cast<LoadInst>(CachedLoad)->setVolatile(true);
+    // Volatile load of __ctx_pool (set by host); volatile prevents O3 from
+    // eliminating it as constant. Cache per-function — volatile blocks CSE,
+    // so without caching each call site adds a duplicate load.
+    auto *CachedLoad = ctxPoolLoadCache[FF];
+    if (!CachedLoad) {
+      auto *PoolPtr = M->getGlobalVariable("__ctx_pool");
+      CachedLoad = builder.CreateLoad(
+          PointerType::getUnqual(C), PoolPtr, "__ctx_pool_ld");
+      cast<LoadInst>(CachedLoad)->setVolatile(true);
+      ctxPoolLoadCache[FF] = CachedLoad;
+    }
+    // Insert GEP after the cached load (subsequent calls reuse it; GEPs
+    // for later context vars go right after the load).
+    builder.SetInsertPoint(CachedLoad->getNextNode());
 
     Result = dyn_cast<Instruction>(builder.CreateGEP(
         AllocType, CachedLoad,
@@ -1906,6 +1920,7 @@ public:
     // clear context array, temp variables for new kernel function
     contextArrays.clear();
     tempInstructionIds.clear();
+    ctxPoolLoadCache.clear();
     g_schedule_flag = schedule_flag;
     tempInstructionIndex = 0;
 
