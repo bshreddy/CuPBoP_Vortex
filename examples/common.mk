@@ -33,6 +33,13 @@ EXTRA_C_SRCS   ?=
 EXTRA_CLANG_FLAGS ?=
 RUN_ARGS       ?=
 
+# Vortex HW config — must match simx build (blackbox.sh --cores/--warps/--threads).
+# VX_config.h defaults are 4/4/4; compile-time macro overrides here so that
+# kernel/wrapper code (e.g. warp_shfl array sizing) sees the actual HW values.
+VORTEX_NUM_CORES   ?= 4
+VORTEX_NUM_WARPS   ?= 16
+VORTEX_NUM_THREADS ?= 32
+
 KERNEL          = $(basename $(notdir $(KERNEL_CU)))
 CUDA_PATH      ?= $(CuPBoP_PATH)/cuda-12.1
 
@@ -62,7 +69,10 @@ else
                    -mcmodel=medany -fno-rtti -fno-exceptions -nostartfiles -nostdlib \
                    -fdata-sections -ffunction-sections \
                    -I$(VORTEX_HOME)/kernel/include -I$(VORTEX_PATH)/kernel/../hw \
-                   -DXLEN_64 -DNDEBUG
+                   -DXLEN_64 -DNDEBUG \
+                   -DNUM_CORES=$(VORTEX_NUM_CORES) \
+                   -DNUM_WARPS=$(VORTEX_NUM_WARPS) \
+                   -DNUM_THREADS=$(VORTEX_NUM_THREADS)
   VX_LDFLAGS     = -Wl,-Bstatic,--gc-sections,-T,$(VORTEX_HOME)/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=$(STARTUP_ADDR) \
                    $(VORTEX_HOME)/build/kernel/libvortex.a \
                    -L$(TOOLDIR)/libc64/lib -lm -lc \
