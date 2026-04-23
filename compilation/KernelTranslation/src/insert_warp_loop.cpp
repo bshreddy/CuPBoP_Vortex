@@ -452,14 +452,14 @@ llvm::Instruction *AddContextSave(llvm::Instruction *instruction,
   // Include block_index_x ONLY when using ctx_pool (need_nested_loop path).
   // Stack allocas are sized by block_size (per-block), so adding block_index_x
   // would write OOB. ctx_pool allocas are sized MAX_BLK (multi-block).
+  // Use direct global load (not threadlocal.address intrinsic) — the
+  // intrinsic acts as an LLVM optimization barrier, preventing CSE across
+  // many bidx_x loads in shfl-heavy kernels (bh-cuda SummarizationKernel
+  // degraded ~4x from this).
   llvm::Value *thread_idx;
   if (g_schedule_flag == 0 && need_nested_loop) {
-    auto bidx_global = M->getGlobalVariable("block_index_x");
-    auto bidx_tls_ptr = builder.CreateCall(
-        Intrinsic::getDeclaration(M, Intrinsic::threadlocal_address,
-                                  {bidx_global->getType()}),
-        {bidx_global});
-    auto block_index_x = builder.CreateLoad(I32, bidx_tls_ptr, "bidx_x");
+    auto block_index_x =
+        createLoad(builder, M->getGlobalVariable("block_index_x"));
     auto block_offset = builder.CreateBinOp(Instruction::Mul, block_index_x,
                                             ConstantInt::get(I32, 1024));
     thread_idx = builder.CreateBinOp(Instruction::Add, thread_idx_in_block,
@@ -503,14 +503,12 @@ llvm::Instruction *AddContextRestore(llvm::Value *val,
       "thread_idx_in_block");
   // Include block_index_x ONLY when using ctx_pool (need_nested_loop path).
   // Stack allocas are sized by block_size, so block_index_x offset would OOB.
+  // Direct global load (not threadlocal.address intrinsic) — see
+  // AddContextSave for rationale (intrinsic blocks CSE, bh slowdown).
   llvm::Value *thread_idx;
   if (g_schedule_flag == 0 && need_nested_loop) {
-    auto bidx_global = M->getGlobalVariable("block_index_x");
-    auto bidx_tls_ptr = builder.CreateCall(
-        Intrinsic::getDeclaration(M, Intrinsic::threadlocal_address,
-                                  {bidx_global->getType()}),
-        {bidx_global});
-    auto block_index_x = builder.CreateLoad(I32, bidx_tls_ptr, "bidx_x");
+    auto block_index_x =
+        createLoad(builder, M->getGlobalVariable("block_index_x"));
     auto block_offset = builder.CreateBinOp(Instruction::Mul, block_index_x,
                                             ConstantInt::get(I32, 1024));
     thread_idx = builder.CreateBinOp(Instruction::Add, thread_idx_in_block,
