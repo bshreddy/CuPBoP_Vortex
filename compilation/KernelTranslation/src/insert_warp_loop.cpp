@@ -1226,7 +1226,7 @@ void add_mapping_variable(llvm::Function* F, bool intra_warp_loop,
           sw_warp_size, "warp_number");
               //printf("SCHEDULE DEBUG: nested loop!\n");
     }
-  } else { // Schedule 0 
+  } else { // Schedule 0
     if (!need_nested_loop) {
       sche_data.inner_loop_init = builder.getInt32(0);
       sche_data.inner_loop_inc = builder.getInt32(1);
@@ -1238,9 +1238,13 @@ void add_mapping_variable(llvm::Function* F, bool intra_warp_loop,
 
       sche_data.outer_loop_init = builder.getInt32(0);
       sche_data.outer_loop_inc = builder.getInt32(1);
-      sche_data.outer_loop_cond =
-          builder.CreateSDiv(sw_block_size, sw_warp_size, "warp_number");
-    } 
+      // ceil-div so block_size < 32 still executes one partial warp
+      // (floor-div caused kernels with bs<32 to skip body entirely)
+      sche_data.outer_loop_cond = builder.CreateSDiv(
+          builder.CreateSub(builder.CreateAdd(sw_block_size, sw_warp_size),
+                            builder.getInt32(1)),
+          sw_warp_size, "warp_number");
+    }
   }
 
   return;
