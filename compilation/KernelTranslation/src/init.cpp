@@ -2,6 +2,7 @@
 #include "memory_hierarchy.h"
 #include "tool.h"
 #include <fstream>
+#include <functional>
 #include <set>
 #include <cstdlib>
 #include <iostream>
@@ -704,6 +705,34 @@ void init_block(llvm::Module *M, std::ofstream &fout) {
 
       for (auto *L : AllLoops) {
         bool has_shfl = false;
+        // Only unroll INNERMOST loops containing shfl. If a loop has
+        // subloops (e.g. parallel_prefix_sum's outer per-thread loop with
+        // an inner shfl reduction), unrolling the outer one is pointless
+        // (its trip count is runtime-dependent) and makes the inner shfl
+        // copies multiply, blowing up IR (jaccard SCHE_0: 32x outer × inner
+        // unroll → 4.9 M IR lines, kernelTranslator hang).
+        bool has_subloops_with_shfl = false;
+        std::function<bool(Loop *)> hasShflInLoop = [&](Loop *LL) {
+          for (auto *BB : LL->getBlocks()) {
+            for (auto &I : *BB) {
+              if (auto *CI = dyn_cast<CallInst>(&I)) {
+                if (CI->getCalledFunction()) {
+                  auto name = CI->getCalledFunction()->getName();
+                  if (name.contains("shfl_down") || name.contains("shfl_up") ||
+                      name.contains("shfl_xor") || name.contains("shfl_bfly") ||
+                      name.contains("nvvm.shfl.sync.down") ||
+                      name.contains("nvvm.shfl.sync.up") ||
+                      name.contains("nvvm.shfl.sync.bfly"))
+                    return true;
+                }
+              }
+            }
+          }
+          return false;
+        };
+        for (auto *SL : L->getSubLoops())
+          if (hasShflInLoop(SL)) { has_subloops_with_shfl = true; break; }
+        if (has_subloops_with_shfl) continue;
         for (auto *BB : L->getBlocks()) {
           for (auto &I : *BB) {
             if (auto *CI = dyn_cast<CallInst>(&I)) {
