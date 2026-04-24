@@ -699,12 +699,11 @@ float __cuda_atomic_fadd_f32(float *addr, float val) {
 // pointer varies per lane.
 extern "C" __attribute__((noinline))
 void __cuda_atomic_fadd_f32_uniform_void(float *addr, float val) {
-  // Butterfly warp reduction: after the loop all 32 lanes hold the full sum.
+  // Butterfly warp reduction using CUDA-style wrapper (known-correct
+  // parameter convention). After the loop all 32 lanes hold the full sum.
   #pragma unroll
   for (int i = 16; i > 0; i >>= 1) {
-    int bits = *reinterpret_cast<int *>(&val);
-    int shifted = vx_shfl_bfly((size_t)bits, i, 31, 0);
-    val += *reinterpret_cast<float *>(&shifted);
+    val += __shfl_xor_sync(0xFFFFFFFF, val, i, 32);
   }
   if (vx_thread_id() == 0) {
     while (__atomic_exchange_n((int *)&__cuda_atomic_fadd_lock, 1,
