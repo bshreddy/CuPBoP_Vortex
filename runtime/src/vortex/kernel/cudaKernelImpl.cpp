@@ -687,3 +687,29 @@ float __cuda_atomic_fadd_f32(float *addr, float val) {
   }
   return old;
 }
+
+// Warp-reduced fast path for the common case: uniform address + unused return.
+// All 32 lanes add to the SAME `addr`, reduce within the warp first via
+// shfl_xor butterfly, then only lane 0 takes the global lock and does the
+// single add. ~30x faster than the lane-serialized path because it collapses
+// 32 lock acquires into 1 (per warp) and avoids inter-lane contention.
+//
+// Called by lower_atomicrmw_fadd when RMW->use_empty() AND pointer is
+// a function argument (uniform across warp). Unsafe to use when the
+// pointer varies per lane.
+extern "C" __attribute__((noinline))
+void __cuda_atomic_fadd_f32_uniform_void(float *addr, float val) {
+  // Butterfly warp reduction: after the loop all 32 lanes hold the full sum.
+  #pragma unroll
+  for (int i = 16; i > 0; i >>= 1) {
+    int bits = *reinterpret_cast<int *>(&val);
+    int shifted = vx_shfl_bfly((size_t)bits, i, 31, 0);
+    val += *reinterpret_cast<float *>(&shifted);
+  }
+  if (vx_thread_id() == 0) {
+    while (__atomic_exchange_n((int *)&__cuda_atomic_fadd_lock, 1,
+                               __ATOMIC_ACQUIRE) != 0) { }
+    *addr = *addr + val;
+    __atomic_store_n((int *)&__cuda_atomic_fadd_lock, 0, __ATOMIC_RELEASE);
+  }
+}

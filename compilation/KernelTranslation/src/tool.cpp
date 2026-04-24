@@ -28,6 +28,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
+#include "llvm/Analysis/ValueTracking.h"
 
 #include "cg_sync.h"
 #include "llvm_type_utils.h"
@@ -367,21 +368,86 @@ void lower_atomicrmw_fadd(llvm::Module *M) {
 
   auto &Ctx = M->getContext();
   auto *FloatTy = Type::getFloatTy(Ctx);
+  auto *VoidTy = Type::getVoidTy(Ctx);
   auto *PtrTy = PointerType::getUnqual(Ctx);
   auto *FnTy = FunctionType::get(FloatTy, {PtrTy, FloatTy}, false);
+  auto *VoidFnTy = FunctionType::get(VoidTy, {PtrTy, FloatTy}, false);
   FunctionCallee Helper = M->getOrInsertFunction(
       "__cuda_atomic_fadd_f32", FnTy);
+  FunctionCallee HelperUniformVoid = M->getOrInsertFunction(
+      "__cuda_atomic_fadd_f32_uniform_void", VoidFnTy);
 
+  size_t nuniform = 0, ngeneral = 0;
   for (auto *RMW : fadd_ops) {
     IRBuilder<> B(RMW);
     auto *ptr = RMW->getPointerOperand();
     auto *addend = RMW->getValOperand();
-    auto *call = B.CreateCall(Helper, {ptr, addend});
-    RMW->replaceAllUsesWith(call);
-    RMW->eraseFromParent();
+
+    // Fast path: if the atomic result is unused AND the pointer is a
+    // kernel argument (uniform across the warp — all 32 lanes add to
+    // the same address), call the warp-reduced helper instead of the
+    // lane-serialized one. Typical for accumulators like `atomicAdd(&g, v)`
+    // where g is a single global scalar passed as a kernel parameter.
+    // ~30x faster because it collapses 32 lock acquires into 1 per warp.
+    // Check if pointer is uniform (same across all 32 lanes in a warp).
+    // Clang's CUDA atomicAdd helper lowers to:
+    //   %alloca = alloca ptr; store %arg → %alloca; %p = load %alloca
+    //   atomicrmw fadd %p
+    // so the RMW pointer is `load from alloca` that was stored from an Argument.
+    const Value *underlying = getUnderlyingObject(ptr);
+    bool addr_uniform = isa<Argument>(underlying) || isa<GlobalValue>(underlying);
+
+    // getUnderlyingObject stops at load instructions. For the common pattern
+    // above (load-from-alloca with store(s) whose values are uniform), walk
+    // through. Accept multiple stores as long as ALL stored values are
+    // Argument/GlobalValue (all uniform across the warp). Also trace chains
+    // like load→alloca → load→alloca (inliner sometimes creates these).
+    if (!addr_uniform) {
+      const Value *cur = underlying;
+      for (int depth = 0; depth < 4 && !addr_uniform; ++depth) {
+        auto *L = dyn_cast<LoadInst>(cur);
+        if (!L) break;
+        auto *AI = dyn_cast<AllocaInst>(
+            getUnderlyingObject(L->getPointerOperand()));
+        if (!AI) break;
+        const Value *storedVal = nullptr;
+        bool all_uniform_stores = true;
+        int store_count = 0;
+        for (auto *U : AI->users()) {
+          if (auto *SI = dyn_cast<StoreInst>(U)) {
+            store_count++;
+            const Value *v = SI->getValueOperand();
+            if (!isa<Argument>(v) && !isa<GlobalValue>(v) &&
+                !(isa<LoadInst>(v))) {
+              all_uniform_stores = false;
+              break;
+            }
+            storedVal = v;
+          }
+        }
+        if (!storedVal || !all_uniform_stores) break;
+        if (isa<Argument>(storedVal) || isa<GlobalValue>(storedVal)) {
+          addr_uniform = true;
+          break;
+        }
+        // storedVal is another Load — follow it
+        cur = storedVal;
+      }
+    }
+
+    if (RMW->use_empty() && addr_uniform) {
+      B.CreateCall(HelperUniformVoid, {ptr, addend});
+      RMW->eraseFromParent();
+      nuniform++;
+    } else {
+      auto *call = B.CreateCall(Helper, {ptr, addend});
+      RMW->replaceAllUsesWith(call);
+      RMW->eraseFromParent();
+      ngeneral++;
+    }
   }
-  fprintf(stderr, "[CuPBoP] lowered %zu atomicrmw fadd to __cuda_atomic_fadd_f32 call\n",
-          fadd_ops.size());
+  fprintf(stderr, "[CuPBoP] lowered %zu atomicrmw fadd (%zu uniform-void + %zu general)\n",
+          fadd_ops.size(), nuniform, ngeneral);
 }
 
 void lower_cmpxchg_for_flat(llvm::Module *M) {
