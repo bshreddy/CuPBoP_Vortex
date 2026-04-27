@@ -103,59 +103,82 @@ __attribute__((always_inline)) int __activemask(void) {
   return (int)vx_active_threads();
 }
 
+// The `c` parameter received here is NVPTX's encoded shfl operand (per the
+// SHFL.SYNC instruction): bits [4:0] hold the per-direction clamp and bits
+// [12:8] hold the segment-id mask. Clang lowers CUDA's
+// `__shfl_*_sync(mask, val, idx_or_delta_or_laneMask, width=warpSize)` to
+// these encodings, so for the default warp-wide call we observe:
+//   __shfl_up_sync(..., width=32)   → c = 0  (UP clamp = 0,  mask = 0)
+//   __shfl_down_sync(..., width=32) → c = 31 (DOWN clamp=31, mask = 0)
+//   __shfl_xor_sync(..., width=32)  → c = 31 (clamp = 31,    mask = 0)
+//   __shfl_sync(..., width=32)      → c = 31 (clamp = 31,    mask = 0)
+// Vortex's vx_shfl_* expects (clamp, segment_mask) separately. Previously the
+// wrapper passed `cval = c` and `mask = ~c`, which for shfl_up's `c = 0`
+// produced `mask = ~0 = 0x3F`. simx then computed `minLane = t & 0x3F = t`,
+// so the `lane >= minLane` check always failed → every Hillis-Steele prefix
+// scan was silently broken.
+
 __attribute__((always_inline)) int __shfl_sync(int mem_mask, int var,
                                                int srcLane, int c) {
-  int mask = ~c;
-  return vx_shfl_idx((size_t)var, srcLane, c, mask);
+  int clamp = c & 0x1F;
+  int mask = (c >> 8) & 0x1F;
+  return vx_shfl_idx((size_t)var, srcLane, clamp, mask);
 }
 
 __attribute__((always_inline)) float __shfl_sync(int mem_mask, float var,
                                                  int srcLane, int c) {
-  int mask = ~c;
+  int clamp = c & 0x1F;
+  int mask = (c >> 8) & 0x1F;
   int vali = *reinterpret_cast<int *>(&var);
-  int ri = vx_shfl_idx(vali, srcLane, c, mask);
+  int ri = vx_shfl_idx(vali, srcLane, clamp, mask);
   return *reinterpret_cast<float *>(&ri);
 }
 
 __attribute__((always_inline)) int __shfl_up_sync(int mem_mask, int var,
                                                   int delta, int c) {
-  int mask = ~c;
-  return vx_shfl_up((size_t)var, delta, c, mask);
+  int clamp = c & 0x1F;
+  int mask = (c >> 8) & 0x1F;
+  return vx_shfl_up((size_t)var, delta, clamp, mask);
 }
 
 __attribute__((always_inline)) float __shfl_up_sync(int mem_mask, float var,
                                                     int delta, int c) {
-  int mask = ~c;
+  int clamp = c & 0x1F;
+  int mask = (c >> 8) & 0x1F;
   int vali = *reinterpret_cast<int *>(&var);
-  int ri = vx_shfl_up(vali, delta, c, mask);
+  int ri = vx_shfl_up(vali, delta, clamp, mask);
   return *reinterpret_cast<float *>(&ri);
 }
 
 __attribute__((always_inline)) int __shfl_down_sync(int mem_mask, int var,
                                                     int delta, int c) {
-  int mask = ~c;
-  return vx_shfl_down((size_t)var, delta, c, mask);
+  int clamp = c & 0x1F;
+  int mask = (c >> 8) & 0x1F;
+  return vx_shfl_down((size_t)var, delta, clamp, mask);
 }
 
 __attribute__((always_inline)) float __shfl_down_sync(int mem_mask, float var,
                                                       int delta, int c) {
-  int mask = ~c;
+  int clamp = c & 0x1F;
+  int mask = (c >> 8) & 0x1F;
   int vali = *reinterpret_cast<int *>(&var);
-  int ri = vx_shfl_down(vali, delta, c, mask);
+  int ri = vx_shfl_down(vali, delta, clamp, mask);
   return *reinterpret_cast<float *>(&ri);
 }
 
 __attribute__((always_inline)) int __shfl_xor_sync(int mem_mask, int var,
                                                    int laneMask, int c) {
-  int mask = ~c;
-  return vx_shfl_bfly((size_t)var, laneMask, c, mask);
+  int clamp = c & 0x1F;
+  int mask = (c >> 8) & 0x1F;
+  return vx_shfl_bfly((size_t)var, laneMask, clamp, mask);
 }
 
 __attribute__((always_inline)) float __shfl_xor_sync(int mem_mask, float var,
                                                      int laneMask, int c) {
-  int mask = ~c;
+  int clamp = c & 0x1F;
+  int mask = (c >> 8) & 0x1F;
   int vali = *reinterpret_cast<int *>(&var);
-  int ri = vx_shfl_bfly(vali, laneMask, c, mask);
+  int ri = vx_shfl_bfly(vali, laneMask, clamp, mask);
   return *reinterpret_cast<float *>(&ri);
 }
 
