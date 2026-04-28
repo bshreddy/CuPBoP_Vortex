@@ -118,14 +118,14 @@ __attribute__((always_inline)) int __activemask(void) {
 // so the `lane >= minLane` check always failed → every Hillis-Steele prefix
 // scan was silently broken.
 
-__attribute__((always_inline)) int __shfl_sync(int mem_mask, int var,
+__attribute__((always_inline, convergent)) int __shfl_sync(int mem_mask, int var,
                                                int srcLane, int c) {
   int clamp = c & 0x1F;
   int mask = (c >> 8) & 0x1F;
   return vx_shfl_idx((size_t)var, srcLane, clamp, mask);
 }
 
-__attribute__((always_inline)) float __shfl_sync(int mem_mask, float var,
+__attribute__((always_inline, convergent)) float __shfl_sync(int mem_mask, float var,
                                                  int srcLane, int c) {
   int clamp = c & 0x1F;
   int mask = (c >> 8) & 0x1F;
@@ -134,14 +134,14 @@ __attribute__((always_inline)) float __shfl_sync(int mem_mask, float var,
   return *reinterpret_cast<float *>(&ri);
 }
 
-__attribute__((always_inline)) int __shfl_up_sync(int mem_mask, int var,
+__attribute__((always_inline, convergent)) int __shfl_up_sync(int mem_mask, int var,
                                                   int delta, int c) {
   int clamp = c & 0x1F;
   int mask = (c >> 8) & 0x1F;
   return vx_shfl_up((size_t)var, delta, clamp, mask);
 }
 
-__attribute__((always_inline)) float __shfl_up_sync(int mem_mask, float var,
+__attribute__((always_inline, convergent)) float __shfl_up_sync(int mem_mask, float var,
                                                     int delta, int c) {
   int clamp = c & 0x1F;
   int mask = (c >> 8) & 0x1F;
@@ -150,14 +150,14 @@ __attribute__((always_inline)) float __shfl_up_sync(int mem_mask, float var,
   return *reinterpret_cast<float *>(&ri);
 }
 
-__attribute__((always_inline)) int __shfl_down_sync(int mem_mask, int var,
+__attribute__((always_inline, convergent)) int __shfl_down_sync(int mem_mask, int var,
                                                     int delta, int c) {
   int clamp = c & 0x1F;
   int mask = (c >> 8) & 0x1F;
   return vx_shfl_down((size_t)var, delta, clamp, mask);
 }
 
-__attribute__((always_inline)) float __shfl_down_sync(int mem_mask, float var,
+__attribute__((always_inline, convergent)) float __shfl_down_sync(int mem_mask, float var,
                                                       int delta, int c) {
   int clamp = c & 0x1F;
   int mask = (c >> 8) & 0x1F;
@@ -166,14 +166,14 @@ __attribute__((always_inline)) float __shfl_down_sync(int mem_mask, float var,
   return *reinterpret_cast<float *>(&ri);
 }
 
-__attribute__((always_inline)) int __shfl_xor_sync(int mem_mask, int var,
+__attribute__((always_inline, convergent)) int __shfl_xor_sync(int mem_mask, int var,
                                                    int laneMask, int c) {
   int clamp = c & 0x1F;
   int mask = (c >> 8) & 0x1F;
   return vx_shfl_bfly((size_t)var, laneMask, clamp, mask);
 }
 
-__attribute__((always_inline)) float __shfl_xor_sync(int mem_mask, float var,
+__attribute__((always_inline, convergent)) float __shfl_xor_sync(int mem_mask, float var,
                                                      int laneMask, int c) {
   int clamp = c & 0x1F;
   int mask = (c >> 8) & 0x1F;

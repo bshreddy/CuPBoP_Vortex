@@ -550,6 +550,17 @@ void ReplaceWarpLevelPrimitive::replaceWarpShfl1to1(
     }
 
     CallInst *newCall = builder.CreateCall(callee, args);
+    // The original NVPTX shfl intrinsic call carries `convergent`; without
+    // re-applying it on the replacement, clang's LoopUnswitch hoists any
+    // surrounding `if (tid==0)` predicate to the top of the enclosing loop,
+    // and VortexBranchDivergence then wraps that predicate in vx_split_n.
+    // The result is that only one of {tid==0, tid!=0} is active when shfl
+    // runs, so it reads from inactive lanes (returning 0). Symptom in
+    // marchingCubes computeMinMaxLv2: per-voxel min reduces to 0, inflating
+    // Block Lv2 from ~3520 to ~15280.
+    newCall->addFnAttr(Attribute::Convergent);
+    if (auto *fn = dyn_cast<Function>(callee.getCallee()))
+      fn->addFnAttr(Attribute::Convergent);
     ci->replaceAllUsesWith(newCall);
     ci->eraseFromParent();
   }
