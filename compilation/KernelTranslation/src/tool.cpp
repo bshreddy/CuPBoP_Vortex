@@ -4245,13 +4245,13 @@ void replace_wmma_intrinsics(llvm::Module *M) {
   // First erase recognized store/load glue such as:
   //   extractvalue -> bitcast -> store
   //   gep -> load -> bitcast -> old mma
-  eraseDeadGlueInstructions(DeadGlue);
+  // eraseDeadGlueInstructions(DeadGlue);
 
   // Then erase old NVVM calls and their remaining extractvalue chains.
-  cleanupOldNVVMCalls(OldNVVMCalls);
+  // cleanupOldNVVMCalls(OldNVVMCalls);
 
   // After old calls are gone, some input load/bitcast glue may become dead.
-  eraseDeadGlueInstructions(DeadGlue);
+  // eraseDeadGlueInstructions(DeadGlue);
 
   for (Function *F : ToErase) {
     if (!F || !F->use_empty())
